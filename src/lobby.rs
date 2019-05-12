@@ -4,13 +4,12 @@ use crate::utils;
 
 use actix::*;
 use actix_session::{Session, UserSession};
-use actix_web::{web, Error, HttpRequest, HttpResponse};
+use actix_web::{error, web, Error, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use uuid::prelude::*;
 
 pub fn lobby(session: Session, state: web::Data<state::AppState>) -> Result<HttpResponse, Error> {
     if let Ok(Some(uuid)) = &session.get::<String>("uuid") {
-        println!("UUID = {:?}", &uuid);
     } else {
         let uuid = Uuid::new_v4();
         println!("Setting UUID = {:?}", &uuid);
@@ -20,18 +19,23 @@ pub fn lobby(session: Session, state: web::Data<state::AppState>) -> Result<Http
 }
 
 pub fn lobby_ws(
+    session: Session,
     req: HttpRequest,
     stream: web::Payload,
     state: web::Data<state::AppState>,
 ) -> Result<HttpResponse, Error> {
-    ws::start(
-        Ws {
-            req: req.clone(),
-            state: state,
-        },
-        &req,
-        stream,
-    )
+    if let Ok(Some(uuid)) = &session.get::<String>("uuid") {
+        return ws::start(
+            Ws {
+                req: req.clone(),
+                state: state,
+                uuid: uuid.to_string(),
+            },
+            &req,
+            stream,
+        );
+    }
+    Err(error::ErrorInternalServerError(""))
 }
 
 const MAX_NAME_LEN: usize = 15;
@@ -39,6 +43,7 @@ const MAX_NAME_LEN: usize = 15;
 pub struct Ws {
     req: HttpRequest,
     state: web::Data<state::AppState>,
+    uuid: String,
 }
 
 impl Actor for Ws {
@@ -83,10 +88,6 @@ impl Ws {
                     .req
                     .url_for("game", &[room])
                     .map_err(|e| format!("Error generating URL: {:?}", &e))?;
-                self.req
-                    .get_session()
-                    .set("name", &name)
-                    .map_err(|e| format!("Error setting name in session: {:?}", e))?;
                 let mut games = self.state.games.lock().unwrap();
                 if games.contains_key(&name) {
                     return Ok(
