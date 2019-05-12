@@ -9,10 +9,13 @@ use actix_web_actors::ws;
 use uuid::prelude::*;
 
 pub fn lobby(session: Session, state: web::Data<state::AppState>) -> Result<HttpResponse, Error> {
-    match &session.get::<Uuid>("uuid") {
-        Err(_) => session.set("uuid", Uuid::new_v4().to_simple()),
-        Ok(uuid) => println!("UUID = {:?}", &uuid),
-    };
+    if let Ok(Some(uuid)) = &session.get::<String>("uuid") {
+        println!("UUID = {:?}", &uuid);
+    } else {
+        let uuid = Uuid::new_v4();
+        println!("Setting UUID = {:?}", &uuid);
+        session.set("uuid", uuid.to_simple().to_string())?;
+    }
     utils::render_template(state, "index.html")
 }
 
