@@ -37,7 +37,7 @@ pub struct Round {
 }
 
 impl Decrypto {
-    fn new(wordlist: &[String]) -> Self {
+    pub fn new(wordlist: &[String]) -> Self {
         assert!(wordlist.len() > 8);
         let words = pick_words(wordlist);
         assert!(words.len() == 8);
@@ -45,7 +45,7 @@ impl Decrypto {
             team_a: Team {
                 players: IndexSet::new(),
                 active_player_index: 0,
-                words: clone_slice(&words[0..3]),
+                words: clone_slice(&words[0..4]),
                 intercepts: 0,
                 miscommunications: 0,
                 rounds: Vec::new(),
@@ -53,7 +53,7 @@ impl Decrypto {
             team_b: Team {
                 players: IndexSet::new(),
                 active_player_index: 0,
-                words: clone_slice(&words[4..7]),
+                words: clone_slice(&words[4..8]),
                 intercepts: 0,
                 miscommunications: 0,
                 rounds: Vec::new(),
@@ -62,54 +62,54 @@ impl Decrypto {
         }
     }
 
-    fn add_player_a(&mut self, player: &str) -> Result<(), String> {
+    pub fn add_player_a(&mut self, player: &str) -> Result<(), String> {
         return add_player_to_team(player, &mut self.team_a);
     }
 
-    fn add_player_b(&mut self, player: &str) -> Result<(), String> {
+    pub fn add_player_b(&mut self, player: &str) -> Result<(), String> {
         return add_player_to_team(player, &mut self.team_b);
     }
 
-    fn remove_player_a(&mut self, player: &str) -> Result<(), String> {
+    pub fn remove_player_a(&mut self, player: &str) -> Result<(), String> {
         return remove_player_from_team(player, &mut self.team_a);
     }
 
-    fn remove_player_b(&mut self, player: &str) -> Result<(), String> {
+    pub fn remove_player_b(&mut self, player: &str) -> Result<(), String> {
         return remove_player_from_team(player, &mut self.team_b);
     }
 
-    fn new_round(&mut self) -> Result<(), String> {
+    pub fn new_round(&mut self) -> Result<(), String> {
         new_round_for_team(&mut self.team_a)?;
         new_round_for_team(&mut self.team_b)?;
         self.state = State::Rounds;
         return Ok(());
     }
 
-    fn guess_a(&mut self, guess: [u8; 3]) -> Result<(), String> {
+    pub fn guess_a(&mut self, guess: [u8; 3]) -> Result<(), String> {
         return guess_team(&guess, &mut self.team_a);
     }
 
-    fn guess_b(&mut self, guess: [u8; 3]) -> Result<(), String> {
+    pub fn guess_b(&mut self, guess: [u8; 3]) -> Result<(), String> {
         return guess_team(&guess, &mut self.team_a);
     }
 
-    fn spy_guess_a(&mut self, guess: [u8; 3]) -> Result<(), String> {
+    pub fn spy_guess_a(&mut self, guess: [u8; 3]) -> Result<(), String> {
         return spy_guess_team(&guess, &mut self.team_a, &mut self.team_b);
     }
 
-    fn spy_guess_b(&mut self, guess: [u8; 3]) -> Result<(), String> {
+    pub fn spy_guess_b(&mut self, guess: [u8; 3]) -> Result<(), String> {
         return spy_guess_team(&guess, &mut self.team_b, &mut self.team_a);
     }
 
-    fn give_clues_a(&mut self, clues: &[String; 3]) -> Result<(), String> {
+    pub fn give_clues_a(&mut self, clues: &[String; 3]) -> Result<(), String> {
         return give_clues_team(clues, &mut self.team_a);
     }
 
-    fn give_clues_b(&mut self, clues: &[String; 3]) -> Result<(), String> {
+    pub fn give_clues_b(&mut self, clues: &[String; 3]) -> Result<(), String> {
         return give_clues_team(clues, &mut self.team_b);
     }
 
-    fn maybe_advance_game(&mut self) -> Result<(), String> {
+    pub fn maybe_advance_game(&mut self) -> Result<(), String> {
         match self.state {
             State::Setup => {
                 if self.team_a.players.len() < 2 {

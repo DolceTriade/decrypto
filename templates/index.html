@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block head %}
+<script type="text/javascript" src="/static/lobby.js"></script>
+<style>
+.splash-container {
+  overflow: scroll;
+}
+</style>
+{%endblock head %}
+{% block title %}Decrypto{% endblock title %}
+{% block header %}Lobby{% endblock header %}
+{% block content %}
+<div class="splash-container">
+    <div class="splash">
+        <p class="splash-head">
+            Enter player and game name to get started!
+        </p>
+        <p class="splash-subhead">
+        <form class="pure-form">
+          <fieldset class="pure-group">
+              <input id="name" type="text" class="pure-input-1-2" placeholder="Username">
+              <input id="room" type="text" class="pure-input-1-2" placeholder="Room">
+          </fieldset>
+
+          <fieldset class="pure-group">
+            <a class="pure-button pure-button-primary" onClick="join_or_create()">Enter Game</a>
+          </fieldset>
+        </form>
+        </p>
+        <p>
+        </p>
+    </div>
+</div>
+{% endblock content %}
