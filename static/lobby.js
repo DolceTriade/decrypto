@@ -1,4 +1,4 @@
-s = new WebSocket('ws://' + document.domain + ':' + location.port + '/lobby_ws');
+codes = new WebSocket('ws://' + document.domain + ':' + location.port + '/lobby_ws');
 s.onmessage = function(msg) {
   console.log('Got server response:');
   console.log(msg);
@@ -15,7 +15,7 @@ s.onmessage = function(msg) {
 
   switch (d['command']) {
     case 'join_game': {
-      //window.location.href = d['game']
+      window.location.href = d['game']
     }
   }
 }
