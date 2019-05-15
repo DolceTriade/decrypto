@@ -6,6 +6,7 @@ use actix::*;
 use actix_session::{Session, UserSession};
 use actix_web::{error, web, Error, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
+use std::sync::Arc;
 use uuid::prelude::*;
 
 pub fn lobby(session: Session, state: web::Data<state::AppState>) -> Result<HttpResponse, Error> {
@@ -84,10 +85,20 @@ impl Ws {
             "join_or_create_game" => {
                 let name = validate_and_get_name(&value["name"])?;
                 let room = validate_and_get_name(&value["room"])?;
+                let empty: [String; 0] = [];
                 let game_url = self
                     .req
-                    .url_for("game", &[room])
+                    .url_for("game", &empty)
                     .map_err(|e| format!("Error generating URL: {:?}", &e))?;
+                {
+                    let mut players = self.state.players.lock().unwrap();
+                    for player in &*players {
+                        if player.1.name == name {
+                            return Err(format!("{} already in use!", name));
+                        }
+                    }
+                    players.insert(self.uuid.clone(), state::Player::new(&name, &room));
+                }
                 let mut games = self.state.games.lock().unwrap();
                 if games.contains_key(&name) {
                     return Ok(
@@ -96,7 +107,7 @@ impl Ws {
                 }
                 games.insert(
                     name.to_string(),
-                    decrypto::Decrypto::new(&self.state.wordlist),
+                    Arc::new(decrypto::Decrypto::new(&self.state.wordlist)),
                 );
                 return Ok(json!({"command": "join_game", "game": game_url.as_str()}).to_string());
             }

@@ -17,13 +17,10 @@ use std::fs::read_to_string;
 use std::sync::{Arc, Mutex};
 
 mod decrypto;
+mod game;
 mod lobby;
 mod state;
 mod utils;
-
-fn detail(state: web::Data<state::AppState>) -> Result<HttpResponse, Error> {
-    utils::render_template(state, "detail.html")
-}
 
 fn p404(state: web::Data<state::AppState>) -> Result<HttpResponse, Error> {
     utils::render_template(state, "404.html")
@@ -35,8 +32,9 @@ fn main() {
         .lines()
         .map(|s| s.to_string())
         .collect();
-    let games: Arc<Mutex<HashMap<String, decrypto::Decrypto>>> =
+    let games: Arc<Mutex<HashMap<String, Arc<decrypto::Decrypto>>>> =
         Arc::new(Mutex::new(HashMap::new()));
+    let players: Arc<Mutex<HashMap<String, state::Player>>> = Arc::new(Mutex::new(HashMap::new()));
 
     HttpServer::new(move || {
         let tera = compile_templates!(concat!(env!("CARGO_MANIFEST_DIR"), "/templates/**/*"));
@@ -44,6 +42,7 @@ fn main() {
             template: tera,
             wordlist: wordlist.clone(),
             games: games.clone(),
+            players: players.clone(),
         };
         App::new()
             .data(state)
@@ -54,10 +53,11 @@ fn main() {
             .route("/", web::get().to(lobby::lobby))
             .service(web::resource("/lobby_ws").route(web::get().to(lobby::lobby_ws)))
             .service(
-                web::resource("/game/{game}")
-                    .route(web::get().to(detail))
+                web::resource("/game")
+                    .route(web::get().to(game::game))
                     .name("game"),
             )
+            .service(web::resource("/game_ws").route(web::get().to(game::game_ws)))
             .default_service(web::route().to(p404))
     })
     .bind("127.0.0.1:8080")

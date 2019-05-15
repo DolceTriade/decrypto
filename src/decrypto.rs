@@ -1,9 +1,13 @@
 extern crate indexmap;
 extern crate rand;
 
+use crate::game;
+use crate::state;
+
+use actix::prelude::*;
 use indexmap::set::IndexSet;
 use rand::Rng;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 enum State {
     Setup,
@@ -17,6 +21,8 @@ pub struct Decrypto {
     team_a: Team,
     team_b: Team,
     state: State,
+    // UUID -> name
+    players: HashMap<String, state::Player>,
 }
 
 pub struct Team {
@@ -59,15 +65,35 @@ impl Decrypto {
                 rounds: Vec::new(),
             },
             state: State::Setup,
+            players: HashMap::new(),
         }
     }
 
+    pub fn add_player(&mut self, uuid: &str, player: &state::Player) {
+        self.players.insert(uuid.to_string(), player.clone());
+    }
+
     pub fn add_player_a(&mut self, player: &str) -> Result<(), String> {
-        return add_player_to_team(player, &mut self.team_a);
+        add_player_to_team(player, &mut self.team_a)?;
+        let json = json!({"command": "joined_team_a", "name": player.to_string()}).to_string();
+        let msg = game::SendCommand { json: json };
+        self.players.values().for_each(|player| {
+            if let Some(addr) = &player.addr {
+                addr.send(msg.clone()).wait().unwrap_or(());
+            }
+        });
+        return Ok(());
     }
 
     pub fn add_player_b(&mut self, player: &str) -> Result<(), String> {
-        return add_player_to_team(player, &mut self.team_b);
+        add_player_to_team(player, &mut self.team_b)?;
+        let json = json!({"command": "joined_team_b", "name": player.to_string()}).to_string();
+        let msg = game::SendCommand { json: json };
+        self.players.values().for_each(|player| {
+            if let Some(addr) = &player.addr {
+                addr.send(msg.clone()).wait().unwrap_or(());
+            }
+        });
     }
 
     pub fn remove_player_a(&mut self, player: &str) -> Result<(), String> {
