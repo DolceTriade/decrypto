@@ -76,32 +76,25 @@ impl Decrypto {
     pub fn add_player_a(&mut self, player: &str) -> Result<(), String> {
         add_player_to_team(player, &mut self.team_a)?;
         let json = json!({"command": "joined_team_a", "name": player.to_string()}).to_string();
-        let msg = game::SendCommand { json: json };
-        self.players.values().for_each(|player| {
-            if let Some(addr) = &player.addr {
-                addr.send(msg.clone()).wait().unwrap_or(());
-            }
-        });
-        return Ok(());
+        return self.send_to_players(&json, None);
     }
 
     pub fn add_player_b(&mut self, player: &str) -> Result<(), String> {
         add_player_to_team(player, &mut self.team_b)?;
         let json = json!({"command": "joined_team_b", "name": player.to_string()}).to_string();
-        let msg = game::SendCommand { json: json };
-        self.players.values().for_each(|player| {
-            if let Some(addr) = &player.addr {
-                addr.send(msg.clone()).wait().unwrap_or(());
-            }
-        });
+        return self.send_to_players(&json, None);
     }
 
     pub fn remove_player_a(&mut self, player: &str) -> Result<(), String> {
-        return remove_player_from_team(player, &mut self.team_a);
+        remove_player_from_team(player, &mut self.team_a)?;
+        let json = json!({"command": "left_team_a", "name": player.to_string()}).to_string();
+        return self.send_to_players(&json, None);
     }
 
     pub fn remove_player_b(&mut self, player: &str) -> Result<(), String> {
-        return remove_player_from_team(player, &mut self.team_b);
+        remove_player_from_team(player, &mut self.team_b)?;
+        let json = json!({"command": "left_team_b", "name": player.to_string()}).to_string();
+        return self.send_to_players(&json, None);
     }
 
     pub fn new_round(&mut self) -> Result<(), String> {
@@ -168,6 +161,27 @@ impl Decrypto {
             _ => {}
         }
         return Ok(());
+    }
+
+    fn send_to_players(&self, json: &str, team: Option<&Team>) -> Result<(), String> {
+        let mut ret = Ok(());
+        let msg = game::SendCommand {
+            json: json.to_string(),
+        };
+        self.players.values().for_each(|player| {
+            if let Some(addr) = &player.addr {
+                if let Some(t) = team {
+                    if t.players.contains(&player.name) {
+                        return;
+                    }
+                }
+                let res = addr.send(msg.clone()).wait();
+                if !ret.is_err() {
+                    ret = res;
+                }
+            }
+        });
+        return ret.map_err(|e| format!("{:?}", &e));
     }
 }
 
