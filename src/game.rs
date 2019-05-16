@@ -1,0 +1,129 @@
+use crate::decrypto;
+use crate::state;
+use crate::utils;
+
+use actix::AsyncContext;
+use actix::*;
+use actix_session::{Session, UserSession};
+use actix_web::{error, web, Error, HttpRequest, HttpResponse};
+use actix_web_actors::ws;
+use std::sync::{Arc, Mutex};
+
+pub fn game(session: Session, state: web::Data<state::AppState>) -> Result<HttpResponse, Error> {
+    utils::render_template(state, "detail.html")
+}
+
+pub fn game_ws(
+    session: Session,
+    req: HttpRequest,
+    stream: web::Payload,
+    state: web::Data<state::AppState>,
+) -> Result<HttpResponse, Error> {
+    if let Ok(Some(uuid)) = &session.get::<String>("uuid") {
+        let mut player_opt: Option<state::Player> = None;
+        {
+            let players = state.players.lock().unwrap();
+            if let Some(player) = players.get(uuid) {
+                player_opt.replace(player.clone());
+            } else {
+                return Err(error::ErrorNotFound(
+                    "Player not found. Try going to the lobby.",
+                ));
+            }
+        }
+        let mut game_opt: Option<Arc<decrypto::Decrypto>> = None;
+        {
+            let games = state.games.lock().unwrap();
+            if let Some(game) = games.get(&player_opt.as_ref().unwrap().game) {
+                game_opt.replace(game.clone());
+            } else {
+                return Err(error::ErrorNotFound("Game not found. Try going to lobby."));
+            }
+        }
+        return ws::start(
+            Ws {
+                uuid: uuid.to_string(),
+                player: player_opt.take().unwrap(),
+                game: game_opt.take().unwrap(),
+            },
+            &req,
+            stream,
+        );
+    }
+    Err(error::ErrorInternalServerError(""))
+}
+
+pub struct Ws {
+    uuid: String,
+    player: state::Player,
+    game: Arc<decrypto::Decrypto>,
+}
+
+impl Actor for Ws {
+    type Context = ws::WebsocketContext<Self>;
+}
+
+impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
+    fn started(&mut self, ctx: &mut Self::Context) {
+        self.player.addr.replace(ctx.address());
+        let game = Arc::get_mut(&mut self.game);
+        if let Some(g) = game {
+            g.add_player(&self.uuid, &self.player);
+        }
+    }
+
+    fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
+        println!("GOT: {:?}", &msg);
+        match msg {
+            ws::Message::Ping(msg) => ctx.pong(&msg),
+            ws::Message::Text(text) => match self.handle_text(&text, ctx) {
+                Ok(out) => ctx.text(out),
+                Err(err) => ctx.text(utils::send_error(&err)),
+            },
+            ws::Message::Binary(bin) => ctx.binary(bin),
+            _ => (),
+        }
+    }
+}
+
+impl Ws {
+    fn handle_text(
+        &mut self,
+        text: &str,
+        _ctx: &mut <Ws as Actor>::Context,
+    ) -> Result<String, String> {
+        let value: serde_json::Value = serde_json::from_str(text)
+            .map_err(|e| format!("Error parsing JSON `{}`: {:?}", &text, &e))?;
+        if !value.is_object() {
+            return Err(format!("Invalid json object: {}", text));
+        }
+        let cmd = &value["command"];
+        if cmd.is_null() || !cmd.is_string() {
+            return Err(format!("Missing or invalid command: {}", text));
+        }
+        match cmd.as_str().unwrap() {
+            "join_a" => {
+                let game = Arc::get_mut(&mut self.game);
+                if let Some(g) = game {
+                    g.add_player(&self.uuid, &self.player);
+                    g.add_player_a(&self.player.name)?;
+                }
+            }
+            _ => {}
+        }
+        return Ok("".to_string());
+    }
+}
+
+#[derive(Clone, Message)]
+pub struct SendCommand {
+    pub json: String,
+}
+
+impl Handler<SendCommand> for Ws {
+    type Result = ();
+
+    fn handle(&mut self, msg: SendCommand, ctx: &mut Self::Context) {
+        ctx.text(msg.json);
+    }
+}
