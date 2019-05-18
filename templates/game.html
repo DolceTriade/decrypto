@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block head %}
+<script type="text/javascript" src="/static/game.js"></script>
+<style>
+.splash-container {
+  overflow: scroll;
+}
+</style>
+{%endblock head %}
+{% block title %}Decrypto: {{ game }}{% endblock title %}
+{% block header %}Decrypto: {{ game }}{% endblock header %}
+{% block content %}
+<div class="splash-container">
+    <div class="splash">
+        <p class="splash-head">
+            Waiting for game to start.
+        </p>
+    </div>
+</div>
+{% endblock content %}

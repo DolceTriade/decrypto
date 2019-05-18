@@ -10,7 +10,20 @@ use actix_web_actors::ws;
 use std::sync::{Arc, Mutex};
 
 pub fn game(session: Session, state: web::Data<state::AppState>) -> Result<HttpResponse, Error> {
-    utils::render_template(state, "detail.html")
+    let mut val = serde_json::Value::default();
+    if let Ok(Some(uuid)) = &session.get::<String>("uuid") {
+        {
+            let players = state.players.lock().unwrap();
+            if let Some(player) = players.get(uuid) {
+                val["game"] = json!(player.game);
+            } else {
+                return Err(error::ErrorNotFound(
+                    "Player not found. Try going to the lobby.",
+                ));
+            }
+        }
+    }
+    utils::render_template_with_args(state, "game.html", val)
 }
 
 pub fn game_ws(
@@ -19,11 +32,14 @@ pub fn game_ws(
     stream: web::Payload,
     state: web::Data<state::AppState>,
 ) -> Result<HttpResponse, Error> {
+    println!("Starting game ws...");
     if let Ok(Some(uuid)) = &session.get::<String>("uuid") {
+        println!("Found UUID: {}...", &uuid);
         let mut player_opt: Option<state::Player> = None;
         {
             let players = state.players.lock().unwrap();
             if let Some(player) = players.get(uuid) {
+                println!("Found player: {}", &player.name);
                 player_opt.replace(player.clone());
             } else {
                 return Err(error::ErrorNotFound(
@@ -31,10 +47,16 @@ pub fn game_ws(
                 ));
             }
         }
+        println!("Finding game!");
         let mut game_opt: Option<Arc<decrypto::Decrypto>> = None;
         {
             let games = state.games.lock().unwrap();
+            println!("There are {} games.", games.len());
+            for g in &*games {
+                println!("Game: {}", &g.0);
+            }
             if let Some(game) = games.get(&player_opt.as_ref().unwrap().game) {
+                println!("Found game!");
                 game_opt.replace(game.clone());
             } else {
                 return Err(error::ErrorNotFound("Game not found. Try going to lobby."));
@@ -103,6 +125,7 @@ impl Ws {
         }
         match cmd.as_str().unwrap() {
             "join_a" => {
+                println!("Got command: join_a");
                 let game = Arc::get_mut(&mut self.game);
                 if let Some(g) = game {
                     g.add_player(&self.uuid, &self.player);

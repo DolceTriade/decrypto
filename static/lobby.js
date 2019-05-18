@@ -1,4 +1,4 @@
-codes = new WebSocket('ws://' + document.domain + ':' + location.port + '/lobby_ws');
+s = new WebSocket('ws://' + document.domain + ':' + location.port + '/lobby_ws');
 s.onmessage = function(msg) {
   console.log('Got server response:');
   console.log(msg);
