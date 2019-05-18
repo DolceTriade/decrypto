@@ -106,7 +106,7 @@ impl Ws {
                     );
                 }
                 games.insert(
-                    name.to_string(),
+                    room.to_string(),
                     Arc::new(decrypto::Decrypto::new(&self.state.wordlist)),
                 );
                 return Ok(json!({"command": "join_game", "game": game_url.as_str()}).to_string());
