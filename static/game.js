@@ -30,3 +30,11 @@ s.onmessage = function(msg) {
 function join_a() {
   s.send(JSON.stringify({ 'command': 'join_a' }));
 }
+
+function join_b() {
+  s.send(JSON.stringify({ 'command': 'join_b' }));
+}
+
+function leave_team() {
+  s.send(JSON.stringify({ 'command': 'leave_team' }));
+}

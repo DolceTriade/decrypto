@@ -6,9 +6,11 @@ use crate::state;
 
 use actix::prelude::*;
 use indexmap::set::IndexSet;
+use indexmap::map::IndexMap;
 use rand::Rng;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
+#[derive(Debug, Eq, PartialEq)]
 enum State {
     Setup,
     Rounds,
@@ -22,7 +24,7 @@ pub struct Decrypto {
     team_b: Team,
     state: State,
     // UUID -> name
-    players: HashMap<String, state::Player>,
+    players: IndexMap<String, state::Player>,
 }
 
 pub struct Team {
@@ -41,6 +43,72 @@ pub struct Round {
     guess: [u8; 3],
     spy_guess: [u8; 3],
 }
+
+impl Actor for Decrypto {
+    type Context = Context<Self>;
+}
+
+#[derive(Message)]
+pub struct AddPlayerToGame {
+    pub uuid: String,
+    pub player: state::Player,
+}
+
+impl Handler<AddPlayerToGame> for Decrypto {
+    type Result = ();
+
+    fn handle(&mut self, msg: AddPlayerToGame, _: &mut Context<Self>) {
+        self.add_player(msg.uuid, msg.player);
+    }
+}
+
+#[derive(Message)]
+#[rtype(result = "Result<(), String>")]
+pub struct AddPlayerToTeamA {
+    pub player: String,
+}
+
+impl Handler<AddPlayerToTeamA> for Decrypto {
+    type Result = Result<(), String>;
+
+    fn handle(&mut self, msg: AddPlayerToTeamA, _: &mut Context<Self>) -> Self::Result {
+        return self.add_player_a(msg.player);
+    }
+}
+
+#[derive(Message)]
+#[rtype(result = "Result<(), String>")]
+pub struct AddPlayerToTeamB {
+    pub player: String,
+}
+
+impl Handler<AddPlayerToTeamB> for Decrypto {
+    type Result = Result<(), String>;
+
+    fn handle(&mut self, msg: AddPlayerToTeamB, _: &mut Context<Self>) -> Self::Result {
+        return self.add_player_b(msg.player);
+    }
+}
+
+#[derive(Message)]
+#[rtype(result = "Result<(), String>")]
+pub struct LeaveTeam {
+    pub player: String,
+}
+
+impl Handler<LeaveTeam> for Decrypto {
+    type Result = Result<(), String>;
+
+    fn handle(&mut self, msg: LeaveTeam, _: &mut Context<Self>) -> Self::Result {
+
+        return self.leave_team(msg.player);
+    }
+}
+
+pub struct PlayerDisconnected {
+    pub uuid: String,
+}
+
 
 impl Decrypto {
     pub fn new(wordlist: &[String]) -> Self {
@@ -65,35 +133,68 @@ impl Decrypto {
                 rounds: Vec::new(),
             },
             state: State::Setup,
-            players: HashMap::new(),
+            players: IndexMap::new(),
         }
     }
 
-    pub fn add_player(&mut self, uuid: &str, player: &state::Player) {
-        self.players.insert(uuid.to_string(), player.clone());
+    fn add_player(&mut self, uuid: String, player: state::Player) {
+        println!("Adding player {} {}", &uuid, &player.name);
+        self.players.insert(uuid, player);
     }
 
-    pub fn add_player_a(&mut self, player: &str) -> Result<(), String> {
-        add_player_to_team(player, &mut self.team_a)?;
-        let json = json!({"command": "joined_team_a", "name": player.to_string()}).to_string();
+    fn add_player_a(&mut self, player: String) -> Result<(), String> {
+        println!("Adding player to team a: {}", &player);
+        if self.team_b.players.contains(&player) {
+            return Err(format!("{} is already on team B", &player));
+        }
+        add_player_to_team(&player, &mut self.team_a)?;
+        let json = json!({"command": "joined_team_a", "name": player}).to_string();
         return self.send_to_players(&json, None);
     }
 
-    pub fn add_player_b(&mut self, player: &str) -> Result<(), String> {
-        add_player_to_team(player, &mut self.team_b)?;
-        let json = json!({"command": "joined_team_b", "name": player.to_string()}).to_string();
+    fn add_player_b(&mut self, player: String) -> Result<(), String> {
+        println!("Adding player to team a: {}", &player);
+        if self.team_a.players.contains(&player) {
+            return Err(format!("{} is already on team A", &player));
+        }
+        add_player_to_team(&player, &mut self.team_b)?;
+        let json = json!({"command": "joined_team_b", "name": player}).to_string();
         return self.send_to_players(&json, None);
     }
 
-    pub fn remove_player_a(&mut self, player: &str) -> Result<(), String> {
-        remove_player_from_team(player, &mut self.team_a)?;
-        let json = json!({"command": "left_team_a", "name": player.to_string()}).to_string();
+    fn leave_team(&mut self, player: String) -> Result<(), String> {
+        println!("Player leaving team: {}", &player);
+        if self.state != State::Setup {
+            return Err("Cannot leave after the game has started!".to_string());
+        }
+        let mut found = false;
+        for p in &self.players {
+            if p.1.name == player {
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            return Err(format!("'{}' is not in the game!", &player));
+        }
+        if self.team_a.players.contains(&player) {
+            return self.remove_player_a(player);
+        } else if self.team_b.players.contains(&player) {
+            return self.remove_player_b(player);
+        } else {
+            return Err(format!("'{}' is not on a team!", &player));
+        }
+    }
+
+    fn remove_player_a(&mut self, player: String) -> Result<(), String> {
+        remove_player_from_team(&player, &mut self.team_a)?;
+        let json = json!({"command": "left_team_a", "name": player}).to_string();
         return self.send_to_players(&json, None);
     }
 
-    pub fn remove_player_b(&mut self, player: &str) -> Result<(), String> {
-        remove_player_from_team(player, &mut self.team_b)?;
-        let json = json!({"command": "left_team_b", "name": player.to_string()}).to_string();
+    pub fn remove_player_b(&mut self, player: String) -> Result<(), String> {
+        remove_player_from_team(&player, &mut self.team_b)?;
+        let json = json!({"command": "left_team_b", "name": player}).to_string();
         return self.send_to_players(&json, None);
     }
 
@@ -164,7 +265,6 @@ impl Decrypto {
     }
 
     fn send_to_players(&self, json: &str, team: Option<&Team>) -> Result<(), String> {
-        let mut ret = Ok(());
         let msg = game::SendCommand {
             json: json.to_string(),
         };
@@ -175,13 +275,10 @@ impl Decrypto {
                         return;
                     }
                 }
-                let res = addr.send(msg.clone()).wait();
-                if !ret.is_err() {
-                    ret = res;
-                }
+                addr.do_send(msg.clone());
             }
         });
-        return ret.map_err(|e| format!("{:?}", &e));
+        return Ok(());
     }
 }
 

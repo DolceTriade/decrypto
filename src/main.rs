@@ -10,6 +10,7 @@ extern crate serde_json;
 extern crate tera;
 extern crate uuid;
 
+use actix::prelude::*;
 use actix_session::{CookieSession, Session};
 use actix_web::{web, App, Error, HttpResponse, HttpServer};
 use std::collections::HashMap;
@@ -32,7 +33,7 @@ fn main() {
         .lines()
         .map(|s| s.to_string())
         .collect();
-    let games: Arc<Mutex<HashMap<String, Arc<decrypto::Decrypto>>>> =
+    let games: Arc<Mutex<HashMap<String, Addr<decrypto::Decrypto>>>> =
         Arc::new(Mutex::new(HashMap::new()));
     let players: Arc<Mutex<HashMap<String, state::Player>>> = Arc::new(Mutex::new(HashMap::new()));
 

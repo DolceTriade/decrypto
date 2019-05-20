@@ -105,10 +105,8 @@ impl Ws {
                         json!({"command": "join_game", "game": game_url.as_str()}).to_string()
                     );
                 }
-                games.insert(
-                    room.to_string(),
-                    Arc::new(decrypto::Decrypto::new(&self.state.wordlist)),
-                );
+                let game_addr = decrypto::Decrypto::new(&self.state.wordlist).start();
+                games.insert(room.to_string(), game_addr);
                 return Ok(json!({"command": "join_game", "game": game_url.as_str()}).to_string());
             }
             _ => {}

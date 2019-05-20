@@ -2,8 +2,8 @@ use crate::decrypto;
 use crate::state;
 use crate::utils;
 
+use actix::prelude::*;
 use actix::AsyncContext;
-use actix::*;
 use actix_session::{Session, UserSession};
 use actix_web::{error, web, Error, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
@@ -48,7 +48,7 @@ pub fn game_ws(
             }
         }
         println!("Finding game!");
-        let mut game_opt: Option<Arc<decrypto::Decrypto>> = None;
+        let mut game_opt: Option<Addr<decrypto::Decrypto>> = None;
         {
             let games = state.games.lock().unwrap();
             println!("There are {} games.", games.len());
@@ -78,7 +78,7 @@ pub fn game_ws(
 pub struct Ws {
     uuid: String,
     player: state::Player,
-    game: Arc<decrypto::Decrypto>,
+    game: Addr<decrypto::Decrypto>,
 }
 
 impl Actor for Ws {
@@ -88,10 +88,13 @@ impl Actor for Ws {
 impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
     fn started(&mut self, ctx: &mut Self::Context) {
         self.player.addr.replace(ctx.address());
-        let game = Arc::get_mut(&mut self.game);
-        if let Some(g) = game {
-            g.add_player(&self.uuid, &self.player);
-        }
+        self.game.do_send(decrypto::AddPlayerToGame {
+            uuid: self.uuid.clone(),
+            player: self.player.clone(),
+        });
+    }
+
+    fn finished(&mut self, ctx: &mut Self::Context) {
     }
 
     fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
@@ -119,18 +122,35 @@ impl Ws {
         if !value.is_object() {
             return Err(format!("Invalid json object: {}", text));
         }
+        println!("Got JSON from {}: {}", &self.player.name, &text);
         let cmd = &value["command"];
         if cmd.is_null() || !cmd.is_string() {
             return Err(format!("Missing or invalid command: {}", text));
         }
         match cmd.as_str().unwrap() {
             "join_a" => {
-                println!("Got command: join_a");
-                let game = Arc::get_mut(&mut self.game);
-                if let Some(g) = game {
-                    g.add_player(&self.uuid, &self.player);
-                    g.add_player_a(&self.player.name)?;
-                }
+                self.game
+                    .send(decrypto::AddPlayerToTeamA {
+                        player: self.player.name.clone(),
+                    })
+                    .wait()
+                    .map_err(|e| format!("{:?}", e))??;
+            },
+            "join_b" => {
+                self.game
+                    .send(decrypto::AddPlayerToTeamB {
+                        player: self.player.name.clone(),
+                    })
+                    .wait()
+                    .map_err(|e| format!("{:?}", e))??;
+            },
+            "leave_team" => {
+                self.game
+                    .send(decrypto::LeaveTeam {
+                        player: self.player.name.clone(),
+                    })
+                    .wait()
+                    .map_err(|e| format!("{:?}", e))??;
             }
             _ => {}
         }
