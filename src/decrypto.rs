@@ -5,8 +5,8 @@ use crate::game;
 use crate::state;
 
 use actix::prelude::*;
-use indexmap::set::IndexSet;
 use indexmap::map::IndexMap;
+use indexmap::set::IndexSet;
 use rand::Rng;
 use std::collections::HashSet;
 
@@ -100,15 +100,38 @@ impl Handler<LeaveTeam> for Decrypto {
     type Result = Result<(), String>;
 
     fn handle(&mut self, msg: LeaveTeam, _: &mut Context<Self>) -> Self::Result {
-
         return self.leave_team(msg.player);
     }
 }
 
+#[derive(Message)]
+#[rtype(result = "Result<(), String>")]
+pub struct PlayerConnected {
+    pub uuid: String,
+    pub addr: Addr<game::Ws>,
+}
+
+impl Handler<PlayerConnected> for Decrypto {
+    type Result = Result<(), String>;
+
+    fn handle(&mut self, msg: PlayerConnected, _: &mut Context<Self>) -> Self::Result {
+        return self.player_connected(msg.uuid, msg.addr);
+    }
+}
+
+#[derive(Message)]
+#[rtype(result = "Result<(), String>")]
 pub struct PlayerDisconnected {
     pub uuid: String,
 }
 
+impl Handler<PlayerDisconnected> for Decrypto {
+    type Result = Result<(), String>;
+
+    fn handle(&mut self, msg: PlayerDisconnected, _: &mut Context<Self>) -> Self::Result {
+        return self.player_disconnected(msg.uuid);
+    }
+}
 
 impl Decrypto {
     pub fn new(wordlist: &[String]) -> Self {
@@ -140,6 +163,30 @@ impl Decrypto {
     fn add_player(&mut self, uuid: String, player: state::Player) {
         println!("Adding player {} {}", &uuid, &player.name);
         self.players.insert(uuid, player);
+    }
+
+    fn player_connected(&mut self, uuid: String, addr: Addr<game::Ws>) -> Result<(), String> {
+        match self.players.get_mut(&uuid) {
+            Some(player) => {
+                player.addr.replace(addr);
+                let json = json!({"command": "player_connected", "player": player.name.clone()})
+                    .to_string();
+                return self.send_to_players(&json, None);
+            }
+            None => return Err(format!("Player with UUID {} not in room!", &uuid)),
+        }
+    }
+
+    fn player_disconnected(&mut self, uuid: String) -> Result<(), String> {
+        match self.players.get_mut(&uuid) {
+            Some(player) => {
+                player.addr.take();
+                let json = json!({"command": "player_disconnected", "player": player.name.clone()})
+                    .to_string();
+                return self.send_to_players(&json, None);
+            }
+            None => return Err(format!("Player with UUID {} not in room!", &uuid)),
+        }
     }
 
     fn add_player_a(&mut self, player: String) -> Result<(), String> {

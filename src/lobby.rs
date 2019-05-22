@@ -100,13 +100,17 @@ impl Ws {
                     players.insert(self.uuid.clone(), state::Player::new(&name, &room));
                 }
                 let mut games = self.state.games.lock().unwrap();
-                if games.contains_key(&name) {
+                if games.contains_key(&room.to_lowercase()) {
                     return Ok(
                         json!({"command": "join_game", "game": game_url.as_str()}).to_string()
                     );
                 }
                 let game_addr = decrypto::Decrypto::new(&self.state.wordlist).start();
-                games.insert(room.to_string(), game_addr);
+                games.insert(room.to_lowercase(), game_addr.clone());
+                game_addr.do_send(decrypto::AddPlayerToGame {
+                    uuid: self.uuid.clone(),
+                    player: state::Player::new(&name, &room),
+                });
                 return Ok(json!({"command": "join_game", "game": game_url.as_str()}).to_string());
             }
             _ => {}

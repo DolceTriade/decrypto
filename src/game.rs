@@ -55,7 +55,7 @@ pub fn game_ws(
             for g in &*games {
                 println!("Game: {}", &g.0);
             }
-            if let Some(game) = games.get(&player_opt.as_ref().unwrap().game) {
+            if let Some(game) = games.get(&player_opt.as_ref().unwrap().game.to_lowercase()) {
                 println!("Found game!");
                 game_opt.replace(game.clone());
             } else {
@@ -87,14 +87,20 @@ impl Actor for Ws {
 
 impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
     fn started(&mut self, ctx: &mut Self::Context) {
+        println!("player connected: {}", &self.player.name);
         self.player.addr.replace(ctx.address());
-        self.game.do_send(decrypto::AddPlayerToGame {
+        self.game.do_send(decrypto::PlayerConnected {
             uuid: self.uuid.clone(),
-            player: self.player.clone(),
+            addr: ctx.address().clone(),
         });
     }
 
     fn finished(&mut self, ctx: &mut Self::Context) {
+        println!("player disconnected: {}", &self.player.name);
+        self.player.addr.take();
+        self.game.do_send(decrypto::PlayerDisconnected {
+            uuid: self.uuid.clone(),
+        });
     }
 
     fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
@@ -106,6 +112,7 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
                 Err(err) => ctx.text(utils::send_error(&err)),
             },
             ws::Message::Binary(bin) => ctx.binary(bin),
+            ws::Message::Close(close) => self.finished(ctx),
             _ => (),
         }
     }
@@ -135,7 +142,7 @@ impl Ws {
                     })
                     .wait()
                     .map_err(|e| format!("{:?}", e))??;
-            },
+            }
             "join_b" => {
                 self.game
                     .send(decrypto::AddPlayerToTeamB {
@@ -143,7 +150,7 @@ impl Ws {
                     })
                     .wait()
                     .map_err(|e| format!("{:?}", e))??;
-            },
+            }
             "leave_team" => {
                 self.game
                     .send(decrypto::LeaveTeam {
