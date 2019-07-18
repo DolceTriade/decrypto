@@ -100,7 +100,11 @@ impl Ws {
                     players.insert(self.uuid.clone(), state::Player::new(&name, &room));
                 }
                 let mut games = self.state.games.lock().unwrap();
-                if games.contains_key(&room.to_lowercase()) {
+                if let Some(game_addr) = games.get_mut(&room.to_lowercase()) {
+                    game_addr.do_send(decrypto::AddPlayerToGame {
+                        uuid: self.uuid.clone(),
+                        player: state::Player::new(&name, &room),
+                    });
                     return Ok(
                         json!({"command": "join_game", "game": game_url.as_str()}).to_string()
                     );
