@@ -112,7 +112,6 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
                 Err(err) => ctx.text(utils::send_error(&err)),
             },
             ws::Message::Binary(bin) => ctx.binary(bin),
-            ws::Message::Close(close) => self.finished(ctx),
             _ => (),
         }
     }
