@@ -169,15 +169,61 @@ impl Decrypto {
         match self.players.get_mut(&uuid) {
             Some(player) => {
                 player.addr.replace(addr);
-                let json = json!({"command": "player_connected", "player": player.name.clone()})
-                    .to_string();
-                return self.send_to_players(&json, None);
             }
             None => return Err(format!("Player with UUID {} not in room!", &uuid)),
         }
+        let player = self.players.get(&uuid).unwrap();
+        let json =
+            json!({"command": "player_connected", "player": player.name.clone()}).to_string();
+        self.players.values().try_for_each(|p| {
+            if &p.name == &player.name {
+                return Ok(());
+            }
+            player
+                .addr
+                .as_ref()
+                .unwrap()
+                .clone()
+                .send(game::SendCommand {
+                    json: json!({"command": "player_connected", "player": p.name.clone()})
+                        .to_string(),
+                })
+                .wait()
+                .map_err(|e| format!("{:?}", e))
+        })?;
+        [(&self.team_a, "a"), (&self.team_b, "b")]
+            .iter()
+            .try_for_each(|team| {
+                team.0.players.iter().try_for_each(|p| {
+                    player
+                        .addr
+                        .as_ref()
+                        .unwrap()
+                        .send(game::SendCommand {
+                            json: json!({"command": "join_team", "player": p, "team": team.1})
+                                .to_string(),
+                        })
+                        .wait()
+                        .map_err(|e| format!("{:?}", e))
+                })
+            })?;
+        self.send_to_players(&json, None)?;
+        return Ok(());
     }
 
     fn player_disconnected(&mut self, uuid: String) -> Result<(), String> {
+        if self.state == State::Setup {
+            match self.players.get(&uuid) {
+                Some(player) => {
+                    if self.team_a.players.contains(&player.name) {
+                        self.remove_player_a(player.name.clone())?;
+                    } else if self.team_b.players.contains(&player.name) {
+                        self.remove_player_b(player.name.clone())?;
+                    }
+                }
+                None => return Err(format!("Player with UUID {} not in room!", &uuid)),
+            }
+        }
         match self.players.get_mut(&uuid) {
             Some(player) => {
                 player.addr.take();
@@ -195,17 +241,17 @@ impl Decrypto {
             return Err(format!("{} is already on team B", &player));
         }
         add_player_to_team(&player, &mut self.team_a)?;
-        let json = json!({"command": "joined_team_a", "name": player}).to_string();
+        let json = json!({"command": "joined_team", "name": player, "team": "a"}).to_string();
         return self.send_to_players(&json, None);
     }
 
     fn add_player_b(&mut self, player: String) -> Result<(), String> {
-        println!("Adding player to team a: {}", &player);
+        println!("Adding player to team b: {}", &player);
         if self.team_a.players.contains(&player) {
             return Err(format!("{} is already on team A", &player));
         }
         add_player_to_team(&player, &mut self.team_b)?;
-        let json = json!({"command": "joined_team_b", "name": player}).to_string();
+        let json = json!({"command": "joined_team", "name": player, "team": "b"}).to_string();
         return self.send_to_players(&json, None);
     }
 
@@ -235,13 +281,13 @@ impl Decrypto {
 
     fn remove_player_a(&mut self, player: String) -> Result<(), String> {
         remove_player_from_team(&player, &mut self.team_a)?;
-        let json = json!({"command": "left_team_a", "name": player}).to_string();
+        let json = json!({"command": "left_team", "name": player, "team": "a"}).to_string();
         return self.send_to_players(&json, None);
     }
 
     pub fn remove_player_b(&mut self, player: String) -> Result<(), String> {
         remove_player_from_team(&player, &mut self.team_b)?;
-        let json = json!({"command": "left_team_b", "name": player}).to_string();
+        let json = json!({"command": "left_team", "name": player, "team": "b"}).to_string();
         return self.send_to_players(&json, None);
     }
 
