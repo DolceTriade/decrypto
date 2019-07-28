@@ -135,7 +135,7 @@ impl Handler<PlayerDisconnected> for Decrypto {
 
 impl Decrypto {
     pub fn new(wordlist: &[String]) -> Self {
-        assert!(wordlist.len() > 8);
+        assert!(wordlist.len() >= 8);
         let words = pick_words(wordlist);
         assert!(words.len() == 8);
         Decrypto {
