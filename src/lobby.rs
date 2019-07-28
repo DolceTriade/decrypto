@@ -93,7 +93,7 @@ impl Ws {
                 {
                     let mut players = self.state.players.lock().unwrap();
                     for player in &*players {
-                        if player.1.name == name {
+                        if player.1.name == name && &self.uuid != player.0 {
                             return Err(format!("{} already in use!", name));
                         }
                     }

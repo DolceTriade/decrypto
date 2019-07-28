@@ -2,9 +2,23 @@
 {% block head %}
 <script type="text/javascript" src="/static/game.js"></script>
 <style>
-.splash-container {
-  overflow: scroll;
-}
+    .splash .splash-container {
+        overflow: scroll;
+    }
+
+    .sidebar {
+        position: absolute;
+        width: 10%;
+        height: 50%;
+        top: 50%;
+        right: 1%;
+        transform: translateY(-50%);
+        color: white;
+    }
+
+    .sidebar .splash-head {
+        font-size: 1em;
+    }
 </style>
 {%endblock head %}
 {% block title %}Decrypto: {{ game }}{% endblock title %}
@@ -15,6 +29,19 @@
         <p class="splash-head">
             Waiting for game to start.
         </p>
+        <p id="teamselect" class="content-head setup noteam">
+            <button onClick="join_a();">Join Team A</button>
+            <button onClick="join_b();">Join Team B</button>
+        </p>
+        <p style="display: none;" id="leaveteam" class="content-head setup team">
+            <button onClick="leave_team();">Leave Team</button>
+        </p>
+    </div>
+    <div class="sidebar">
+        Team A
+        <div id="team_a" class="splash-head"></div>
+        Team B
+        <div id="team_b" class="splash-head"></div>
     </div>
 </div>
 {% endblock content %}

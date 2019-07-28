@@ -200,7 +200,7 @@ impl Decrypto {
                         .as_ref()
                         .unwrap()
                         .send(game::SendCommand {
-                            json: json!({"command": "join_team", "player": p, "team": team.1})
+                            json: json!({"command": "joined_team", "player": p, "team": team.1})
                                 .to_string(),
                         })
                         .wait()
@@ -208,28 +208,51 @@ impl Decrypto {
                 })
             })?;
         self.send_to_players(&json, None)?;
+        player
+            .addr
+            .as_ref()
+            .unwrap()
+            .send(game::SendCommand {
+                json: json!({"command": "new_host", "player": &self.players.get_index(0).unwrap().1.name})
+                    .to_string(),
+            })
+            .wait()
+            .map_err(|e| format!("{:?}", e))?;
         return Ok(());
     }
 
     fn player_disconnected(&mut self, uuid: String) -> Result<(), String> {
+        let mut new_host = false;
         if self.state == State::Setup {
-            match self.players.get(&uuid) {
-                Some(player) => {
+            match self.players.get_full(&uuid) {
+                Some((idx, _, player)) => {
                     if self.team_a.players.contains(&player.name) {
                         self.remove_player_a(player.name.clone())?;
                     } else if self.team_b.players.contains(&player.name) {
                         self.remove_player_b(player.name.clone())?;
                     }
+                    if idx == 0 && self.players.len() > 1 {
+                        new_host = true;
+                    }
                 }
                 None => return Err(format!("Player with UUID {} not in room!", &uuid)),
             }
         }
-        match self.players.get_mut(&uuid) {
+        match self.players.remove(&uuid).as_mut() {
             Some(player) => {
                 player.addr.take();
-                let json = json!({"command": "player_disconnected", "player": player.name.clone()})
-                    .to_string();
-                return self.send_to_players(&json, None);
+                {
+                    let json =
+                        json!({"command": "player_disconnected", "player": player.name.clone()})
+                            .to_string();
+                    self.send_to_players(&json, None)?;
+                }
+                if new_host {
+                    let json =
+                        json!({"command": "new_host", "player": &self.players.get_index(0).unwrap().1.name}).to_string();
+                    self.send_to_players(&json, None)?;
+                }
+                return Ok(());
             }
             None => return Err(format!("Player with UUID {} not in room!", &uuid)),
         }
