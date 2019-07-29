@@ -127,6 +127,10 @@ function leave_team() {
   s.send(JSON.stringify({ 'command': 'leave_team' }));
 }
 
+function start_game() {
+  s.send(JSON.stringify({ 'command': 'start_game'}));
+}
+
 function show_team_select(show) {
   if (state != 'setup') {
     return;
@@ -151,4 +155,7 @@ function set_host() {
       }
     }
   });
+  if (host == me) {
+    $('#startgame').show();
+  }
 }

@@ -158,6 +158,14 @@ impl Ws {
                     .wait()
                     .map_err(|e| format!("{:?}", e))??;
             }
+            "start_game" => {
+                self.game
+                    .send(decrypto::StartGame {
+                        uuid: self.uuid.clone(),
+                    })
+                    .wait()
+                    .map_err(|e| format!("{:?}", e))??;
+            }
             _ => {}
         }
         return Ok("".to_string());

@@ -30,11 +30,14 @@
             Waiting for game to start.
         </p>
         <p id="teamselect" class="content-head setup noteam">
-            <button onClick="join_a();">Join Team A</button>
-            <button onClick="join_b();">Join Team B</button>
+            <a class="pure-button pure-button-primary" onClick="join_a();">Join Team A</a>
+            <a class="pure-button pure-button-primary" onClick="join_b();">Join Team B</a>
         </p>
         <p style="display: none;" id="leaveteam" class="content-head setup team">
-            <button onClick="leave_team();">Leave Team</button>
+            <a class="pure-button pure-button-primary" onClick="leave_team();">Leave Team</a>
+        </p>
+        <p style="display: none;" id="startgame" class="content-head setup">
+            <a class="pure-button pure-button-primary" onClick="start_game();">Start Game</a>
         </p>
     </div>
     <div class="sidebar">

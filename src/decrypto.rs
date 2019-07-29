@@ -133,6 +133,20 @@ impl Handler<PlayerDisconnected> for Decrypto {
     }
 }
 
+#[derive(Message)]
+#[rtype(result = "Result<(), String>")]
+pub struct StartGame {
+    pub uuid: String,
+}
+
+impl Handler<StartGame> for Decrypto {
+    type Result = Result<(), String>;
+
+    fn handle(&mut self, msg: StartGame, _: &mut Context<Self>) -> Self::Result {
+        return self.start_game(msg.uuid);
+    }
+}
+
 impl Decrypto {
     pub fn new(wordlist: &[String]) -> Self {
         assert!(wordlist.len() >= 8);
@@ -318,7 +332,7 @@ impl Decrypto {
         new_round_for_team(&mut self.team_a)?;
         new_round_for_team(&mut self.team_b)?;
         self.state = State::Rounds;
-        return Ok(());
+        return self.send_round_info();
     }
 
     pub fn guess_a(&mut self, guess: [u8; 3]) -> Result<(), String> {
@@ -354,6 +368,7 @@ impl Decrypto {
                 if self.team_b.players.len() < 2 {
                     return Err("Team B must have at least 2 players!".to_string());
                 }
+                self.send_words()?;
                 return self.new_round();
             }
             State::Rounds => {
@@ -373,11 +388,25 @@ impl Decrypto {
                     self.state = State::Winner("Team A".to_string());
                 } else if self.team_a.rounds.len() == 8 && self.team_b.rounds.len() == 8 {
                     self.state = State::GuessWords;
+                } else {
+                    self.new_round()?;
                 }
             }
             _ => {}
         }
         return Ok(());
+    }
+
+    pub fn start_game(&mut self, uuid: String) -> Result<(), String> {
+        match self.players.get_full(&uuid) {
+            Some((idx, _, _)) => {
+                if idx != 0 {
+                    return Err("Only game host can start the game!".to_string());
+                }
+            }
+            None => return Err("Unknown player tried to start the game.".to_string()),
+        }
+        return self.maybe_advance_game();
     }
 
     fn send_to_players(&self, json: &str, team: Option<&Team>) -> Result<(), String> {
@@ -394,6 +423,42 @@ impl Decrypto {
                 addr.do_send(msg.clone());
             }
         });
+        return Ok(());
+    }
+
+    fn send_round_info(&mut self) -> Result<(), String> {
+        let team_a_round = self
+            .team_a
+            .rounds
+            .last()
+            .ok_or("Team A rounds empty!".to_string())?;
+        let team_b_round = self
+            .team_b
+            .rounds
+            .last()
+            .ok_or("Team B rounds empty!".to_string())?;
+        let json_a = json!({"command": "round",
+            "number": self.team_a.rounds.len(),
+            "clue_giver": &self.team_a.players.get_index(team_a_round.clue_giver).unwrap(),
+            "enemy_clue_giver": &self.team_b.players.get_index(team_b_round.clue_giver).unwrap(),
+            "order": &team_a_round.order
+        });
+        let json_b = json!({"command": "round",
+            "number": self.team_b.rounds.len(),
+            "clue_giver": &self.team_b.players.get_index(team_b_round.clue_giver).unwrap(),
+            "enemy_clue_giver": &self.team_a.players.get_index(team_a_round.clue_giver).unwrap(),
+            "order": &team_b_round.order
+        });
+        self.send_to_players(&json_a.to_string(), Some(&self.team_a))?;
+        self.send_to_players(&json_b.to_string(), Some(&self.team_b))?;
+        return Ok(());
+    }
+
+    fn send_words(&mut self) -> Result<(), String> {
+        let json_a = json!({"command": "words", "words": &self.team_a.words});
+        let json_b = json!({"command": "words", "words": &self.team_a.words});
+        self.send_to_players(&json_a.to_string(), Some(&self.team_a))?;
+        self.send_to_players(&json_b.to_string(), Some(&self.team_b))?;
         return Ok(());
     }
 }
