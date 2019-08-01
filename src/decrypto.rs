@@ -189,49 +189,40 @@ impl Decrypto {
         let player = self.players.get(&uuid).unwrap();
         let json =
             json!({"command": "player_connected", "player": player.name.clone()}).to_string();
+        self.send_to_players(&json, None)?;
         self.players.values().try_for_each(|p| {
             if &p.name == &player.name {
                 return Ok(());
             }
-            player
-                .addr
-                .as_ref()
-                .unwrap()
-                .clone()
-                .send(game::SendCommand {
-                    json: json!({"command": "player_connected", "player": p.name.clone()})
-                        .to_string(),
-                })
-                .wait()
-                .map_err(|e| format!("{:?}", e))
+            self.send_to_player(
+                &player,
+                &json!({"command": "player_connected", "player": p.name.clone()}).to_string(),
+            )
         })?;
         [(&self.team_a, "a"), (&self.team_b, "b")]
             .iter()
             .try_for_each(|team| {
                 team.0.players.iter().try_for_each(|p| {
-                    player
-                        .addr
-                        .as_ref()
-                        .unwrap()
-                        .send(game::SendCommand {
-                            json: json!({"command": "joined_team", "player": p, "team": team.1})
-                                .to_string(),
-                        })
-                        .wait()
-                        .map_err(|e| format!("{:?}", e))
+                    self.send_to_player(
+                        &player,
+                        &json!({"command": "joined_team", "name": p, "team": team.1}).to_string(),
+                    )
                 })
             })?;
-        self.send_to_players(&json, None)?;
-        player
-            .addr
-            .as_ref()
-            .unwrap()
-            .send(game::SendCommand {
-                json: json!({"command": "new_host", "player": &self.players.get_index(0).unwrap().1.name})
-                    .to_string(),
-            })
-            .wait()
-            .map_err(|e| format!("{:?}", e))?;
+        self.send_to_player(
+            &player,
+            &json!({"command": "new_host", "player": &self.players.get_index(0).unwrap().1.name})
+                .to_string(),
+        )?;
+        let teams = self
+            .team_for_player(&player.name)
+            .ok_or(format!("{} not on team!", &player.name))?;
+        let mut round_number = 1;
+        for round in &teams.0.rounds {
+            let round_json = build_round_info(round_number, teams.0, teams.1)?;
+            self.send_to_player(&player, &round_json.to_string())?;
+            round_number += 1;
+        }
         return Ok(());
     }
 
@@ -409,6 +400,15 @@ impl Decrypto {
         return self.maybe_advance_game();
     }
 
+    fn team_for_player(&self, name: &str) -> Option<(&Team, &Team)> {
+        if self.team_a.players.contains(name) {
+            return Some((&self.team_a, &self.team_b));
+        } else if self.team_b.players.contains(name) {
+            return Some((&self.team_b, &self.team_b));
+        }
+        return None;
+    }
+
     fn send_to_players(&self, json: &str, team: Option<&Team>) -> Result<(), String> {
         let msg = game::SendCommand {
             json: json.to_string(),
@@ -427,30 +427,18 @@ impl Decrypto {
     }
 
     fn send_round_info(&mut self) -> Result<(), String> {
-        let team_a_round = self
-            .team_a
-            .rounds
-            .last()
-            .ok_or("Team A rounds empty!".to_string())?;
-        let team_b_round = self
-            .team_b
-            .rounds
-            .last()
-            .ok_or("Team B rounds empty!".to_string())?;
-        let json_a = json!({"command": "round",
-            "number": self.team_a.rounds.len(),
-            "clue_giver": &self.team_a.players.get_index(team_a_round.clue_giver).unwrap(),
-            "enemy_clue_giver": &self.team_b.players.get_index(team_b_round.clue_giver).unwrap(),
-            "order": &team_a_round.order
-        });
-        let json_b = json!({"command": "round",
-            "number": self.team_b.rounds.len(),
-            "clue_giver": &self.team_b.players.get_index(team_b_round.clue_giver).unwrap(),
-            "enemy_clue_giver": &self.team_a.players.get_index(team_a_round.clue_giver).unwrap(),
-            "order": &team_b_round.order
-        });
+        let json_a = build_round_info(self.team_a.rounds.len() - 1, &self.team_a, &self.team_b)?;
+        let json_b = build_round_info(self.team_b.rounds.len() - 1, &self.team_b, &self.team_a)?;
         self.send_to_players(&json_a.to_string(), Some(&self.team_a))?;
         self.send_to_players(&json_b.to_string(), Some(&self.team_b))?;
+        let round_a = self.team_a.rounds.last().unwrap();
+        let round_b = self.team_b.rounds.last().unwrap();
+        let json_order_a = json!({"command": "order", "number": self.team_a.rounds.len(), "order": &round_a.order.clone()});
+        let json_order_b = json!({"command": "order", "number": self.team_b.rounds.len(), "order": &round_b.order.clone()});
+        let round_a_clue_giver = self.team_a.players.get_index(round_a.clue_giver).unwrap();
+        let round_b_clue_giver = self.team_b.players.get_index(round_b.clue_giver).unwrap();
+        self.send_to_player_name(round_a_clue_giver, &json_order_a.to_string())?;
+        self.send_to_player_name(round_b_clue_giver, &json_order_b.to_string())?;
         return Ok(());
     }
 
@@ -459,6 +447,36 @@ impl Decrypto {
         let json_b = json!({"command": "words", "words": &self.team_a.words});
         self.send_to_players(&json_a.to_string(), Some(&self.team_a))?;
         self.send_to_players(&json_b.to_string(), Some(&self.team_b))?;
+        return Ok(());
+    }
+
+    fn send_to_player_name(&self, name: &str, json: &str) -> Result<(), String> {
+        let msg = game::SendCommand {
+            json: json.to_string(),
+        };
+        self.players
+            .iter()
+            .filter_map(|p| {
+                if &p.1.name == name {
+                    return p.1.addr.clone();
+                }
+                return None;
+            })
+            .for_each(|addr| addr.do_send(msg.clone()));
+        return Ok(());
+    }
+
+    fn send_to_player(&self, player: &state::Player, json: &str) -> Result<(), String> {
+        let msg = game::SendCommand {
+            json: json.to_string(),
+        };
+        player
+            .addr
+            .as_ref()
+            .unwrap()
+            .send(msg)
+            .wait()
+            .map_err(|e| format!("{:?}", e))?;
         return Ok(());
     }
 }
@@ -581,4 +599,62 @@ fn is_round_complete_for_team(team: &Team) -> bool {
         return true;
     }
     return false;
+}
+
+fn build_round_info(
+    round_number: usize,
+    team: &Team,
+    other_team: &Team,
+) -> Result<serde_json::Value, String> {
+    let round = team.rounds.get(round_number).ok_or(format!(
+        "Team rounds out of bounds {} != {}.",
+        &round_number,
+        team.rounds.len()
+    ))?;
+    let other_round = other_team.rounds.get(round_number).ok_or(format!(
+        "Other Team rounds out of bounds {} != {}.",
+        &round_number,
+        other_team.rounds.len()
+    ))?;
+    let clue_giver = team.players.get_index(round.clue_giver).unwrap();
+    let enemy_clue_giver = other_team
+        .players
+        .get_index(other_round.clue_giver)
+        .unwrap();
+    let mut json = json!({
+        "command": "round",
+        "number": round_number,
+        "clue_giver": clue_giver,
+        "enemy_clue_giver": enemy_clue_giver,
+    });
+    let mut map = json.as_object_mut().unwrap();
+    if round
+        .clues
+        .iter()
+        .fold(true, |is_set, clue| is_set && !clue.is_empty())
+    {
+        map.insert("clues".to_string(), json!(round.clues.clone()));
+    }
+
+    let guessed = round
+        .guess
+        .iter()
+        .fold(true, |is_set, guess| is_set && *guess > 0);
+    if guessed {
+        map.insert("guess".to_string(), json!(round.guess.clone()));
+    }
+
+    let spy_guessed = round
+        .spy_guess
+        .iter()
+        .fold(true, |is_set, guess| is_set && *guess > 0);
+    if spy_guessed {
+        map.insert("spy_guess".to_string(), json!(round.spy_guess.clone()));
+    }
+
+    if guessed && spy_guessed {
+        map.insert("order".to_string(), json!(round.order.clone()));
+    }
+
+    return Ok(json);
 }

@@ -14,7 +14,7 @@ s.onerror = function (e) {
 
 s.onmessage = function (msg) {
   console.log('Got server response:');
-  console.log(msg);
+  console.log(msg.data);
   if (!msg.data) return;
   try {
     d = JSON.parse(msg.data);
@@ -41,11 +41,13 @@ s.onmessage = function (msg) {
     } break;
     case 'joined_team': {
       var team = null;
-      if (d['team'] == 'a') {
+      console.log(d);
+      if (d['team'] === 'a') {
         team_a.add(d['name']);
         team = team_a;
-      } else if (d['team'] == 'b') { 
-        team_b.add(d['name']); team = team_b; 
+      } else if (d['team'] === 'b') {
+        team_b.add(d['name']); 
+        team = team_b; 
       } else {
         console.log('ERROR: joined_team: invalid team: ' + d['team']);
         return;
@@ -81,6 +83,8 @@ function on_player_disconnected(player) {
 }
 
 function on_player_joined_team(player, team) {
+  console.log(player);
+  console.log(team);
   var container = team === team_a ? document.getElementById('team_a') : document.getElementById('team_b');
   var child = document.createElement('p');
   child.id = player;
@@ -149,7 +153,7 @@ function set_host() {
     if (!team.has(host)) return;
     var container = team === team_a ? document.getElementById('team_a') : document.getElementById('team_b');
     for (var i = 0; i < container.children.length; ++i) {
-      if (container.children[i].id == player) {
+      if (container.children[i].id == host) {
         container.children[i].className = 'host';
         return;
       }
