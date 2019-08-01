@@ -1,25 +1,6 @@
 {% extends "base.html" %}
 {% block head %}
 <script type="text/javascript" src="/static/game.js"></script>
-<style>
-    .splash .splash-container {
-        overflow: scroll;
-    }
-
-    .sidebar {
-        position: absolute;
-        width: 10%;
-        height: 50%;
-        top: 50%;
-        right: 1%;
-        transform: translateY(-50%);
-        color: white;
-    }
-
-    .sidebar .splash-head {
-        font-size: 1em;
-    }
-</style>
 {%endblock head %}
 {% block title %}Decrypto: {{ game }}{% endblock title %}
 {% block header %}Decrypto: {{ game }}{% endblock header %}
