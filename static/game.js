@@ -28,6 +28,12 @@ s.onmessage = function (msg) {
   }
 
   switch (d['command']) {
+    case 'error': {
+      iziToast.error({
+        title: 'Error',
+        message: d['msg'],
+      });
+    } break;
     case 'join_game': {
       window.location.href = d['game']
     } break;
