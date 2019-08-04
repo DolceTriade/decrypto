@@ -217,11 +217,9 @@ impl Decrypto {
         let teams = self
             .team_for_player(&player.name)
             .ok_or(format!("{} not on team!", &player.name))?;
-        let mut round_number = 1;
-        for round in &teams.0.rounds {
-            let round_json = build_round_info(round_number, teams.0, teams.1)?;
+        for round_number in 0..teams.0.rounds.len() {
+            let round_json = build_round_info(round_number + 1, teams.0, teams.1)?;
             self.send_to_player(&player, &round_json.to_string())?;
-            round_number += 1;
         }
         return Ok(());
     }
@@ -240,7 +238,10 @@ impl Decrypto {
                         new_host = true;
                     }
                 }
-                None => return Err(format!("Player with UUID {} not in room!", &uuid)),
+                None => {
+                    println!("players in room : {:?}", &self.players);
+                    return Err(format!("Player with UUID {} not in room!", &uuid));
+                }
             }
         }
         match self.players.remove(&uuid).as_mut() {
@@ -413,17 +414,17 @@ impl Decrypto {
         let msg = game::SendCommand {
             json: json.to_string(),
         };
-        self.players.values().for_each(|player| {
+        return self.players.values().try_for_each(|player| {
             if let Some(addr) = &player.addr {
                 if let Some(t) = team {
                     if t.players.contains(&player.name) {
-                        return;
+                        return Ok(());
                     }
                 }
                 addr.do_send(msg.clone());
             }
+            return Ok(());
         });
-        return Ok(());
     }
 
     fn send_round_info(&mut self) -> Result<(), String> {
@@ -470,13 +471,7 @@ impl Decrypto {
         let msg = game::SendCommand {
             json: json.to_string(),
         };
-        player
-            .addr
-            .as_ref()
-            .unwrap()
-            .send(msg)
-            .wait()
-            .map_err(|e| format!("{:?}", e))?;
+        player.addr.as_ref().unwrap().do_send(msg);
         return Ok(());
     }
 }
@@ -627,7 +622,7 @@ fn build_round_info(
         "clue_giver": clue_giver,
         "enemy_clue_giver": enemy_clue_giver,
     });
-    let mut map = json.as_object_mut().unwrap();
+    let map = json.as_object_mut().unwrap();
     if round
         .clues
         .iter()

@@ -3,6 +3,7 @@ use crate::game;
 
 use actix::*;
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
@@ -19,6 +20,18 @@ impl Player {
             game: game.to_string(),
             addr: None,
         }
+    }
+}
+
+impl fmt::Debug for Player {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Player {{ name: {}, game: {} addr: {} }}",
+            &self.name,
+            &self.game,
+            self.addr.is_some()
+        )
     }
 }
 

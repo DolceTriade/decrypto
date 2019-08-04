@@ -88,19 +88,24 @@ impl Actor for Ws {
 impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
     fn started(&mut self, ctx: &mut Self::Context) {
         println!("player connected: {}", &self.player.name);
-        self.player.addr.replace(ctx.address());
-        self.game.do_send(decrypto::PlayerConnected {
+        self.player.addr.replace(ctx.address().clone());
+        let ret = self.game.send(decrypto::PlayerConnected {
             uuid: self.uuid.clone(),
             addr: ctx.address().clone(),
         });
+        println!("player_connected: {:?}", ret.wait().unwrap());
     }
 
     fn finished(&mut self, ctx: &mut Self::Context) {
         println!("player disconnected: {}", &self.player.name);
         self.player.addr.take();
-        self.game.do_send(decrypto::PlayerDisconnected {
-            uuid: self.uuid.clone(),
-        });
+        let ret = self
+            .game
+            .send(decrypto::PlayerDisconnected {
+                uuid: self.uuid.clone(),
+            })
+            .wait();
+        println!("player_disconnected: {:?}", ret.wait().unwrap());
     }
 
     fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
