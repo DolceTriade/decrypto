@@ -42,7 +42,7 @@ s.onmessage = function (msg) {
       on_player_connected(d['player']);
     } break;
     case 'player_disconnected': {
-      players.remove(d['player']);
+      players.delete(d['player']);
       on_player_disconnected(d['player']);
     } break;
     case 'joined_team': {
