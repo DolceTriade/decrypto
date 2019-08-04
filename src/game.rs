@@ -103,8 +103,7 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
             .game
             .send(decrypto::PlayerDisconnected {
                 uuid: self.uuid.clone(),
-            })
-            .wait();
+            });
         println!("player_disconnected: {:?}", ret.wait().unwrap());
     }
 
