@@ -132,7 +132,7 @@ a.pure-button-primary {
  */
 
 .splash-container {
-    background: #1f8dd6;
+    background: #999;
     z-index: 1;
     overflow: auto;
     /* The following styles are required for the "scroll-over" effect */
@@ -208,7 +208,7 @@ a.pure-button-primary {
 
 /* This is the class used for the content sub-headers (<h3>) */
 .content-subhead {
-    color: #1f8dd6;
+    color: #aaa;
 }
     .content-subhead i {
         margin-right: 7px;
@@ -217,7 +217,7 @@ a.pure-button-primary {
 /* This is the class used for the dark-background areas. */
 .ribbon {
     background: #2d3e50;
-    color: #aaa;
+    color: #999;
 }
 
 /* This is the class used for the footer */
