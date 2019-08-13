@@ -22,7 +22,7 @@ fn to_context(val: serde_json::Value) -> tera::Context {
             }
         }
         _ => {
-            println!("JSON value is not an object. Cannot convert into Tera context.");
+            info!("JSON value is not an object. Cannot convert into Tera context.");
         }
     }
     return ctx;

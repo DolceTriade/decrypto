@@ -16,3 +16,5 @@ actix-files = "0.1.0"
 actix-web-actors = "1.0.1"
 actix = "0.8.3"
 uuid = { version = "0.7.4", features = ["v4"] }
+log = "0.4.8"
+simple-logging = "2.0.2"

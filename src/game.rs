@@ -9,13 +9,18 @@ use actix_web::{error, web, Error, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use std::sync::{Arc, Mutex};
 
-pub fn game(session: Session, state: web::Data<state::AppState>) -> Result<HttpResponse, Error> {
+pub fn game(
+    game: web::Path<String>,
+    session: Session,
+    state: web::Data<state::AppState>,
+) -> Result<HttpResponse, Error> {
+    info!("game: {}", *game);
     let mut val = serde_json::Value::default();
     if let Ok(Some(uuid)) = &session.get::<String>("uuid") {
         {
             let players = state.players.lock().unwrap();
             if let Some(player) = players.get(uuid) {
-                val["game"] = json!(player.game);
+                val["game"] = json!(*game);
             } else {
                 return Err(error::ErrorNotFound(
                     "Player not found. Try going to the lobby.",
@@ -27,19 +32,20 @@ pub fn game(session: Session, state: web::Data<state::AppState>) -> Result<HttpR
 }
 
 pub fn game_ws(
+    game: web::Path<String>,
     session: Session,
     req: HttpRequest,
     stream: web::Payload,
     state: web::Data<state::AppState>,
 ) -> Result<HttpResponse, Error> {
-    println!("Starting game ws...");
+    info!("Starting game ws...");
     if let Ok(Some(uuid)) = &session.get::<String>("uuid") {
-        println!("Found UUID: {}...", &uuid);
+        info!("Found UUID: {}...", &uuid);
         let mut player_opt: Option<state::Player> = None;
         {
             let players = state.players.lock().unwrap();
             if let Some(player) = players.get(uuid) {
-                println!("Found player: {}", &player.name);
+                info!("Found player: {}", &player.name);
                 player_opt.replace(player.clone());
             } else {
                 return Err(error::ErrorNotFound(
@@ -47,21 +53,26 @@ pub fn game_ws(
                 ));
             }
         }
-        println!("Finding game!");
+        info!("Finding game!");
         let mut game_opt: Option<Addr<decrypto::Decrypto>> = None;
         {
             let games = state.games.lock().unwrap();
-            println!("There are {} games.", games.len());
+            info!("There are {} games.", games.len());
             for g in &*games {
-                println!("Game: {}", &g.0);
+                info!("Game: {}", &g.0);
             }
-            if let Some(game) = games.get(&player_opt.as_ref().unwrap().game.to_lowercase()) {
-                println!("Found game!");
-                game_opt.replace(game.clone());
+            if let Some(game_addr) = games.get(&*game.to_lowercase()) {
+                info!("Found game!");
+                let res = game_addr.do_send(decrypto::AddPlayerToGame {
+                    uuid: uuid.to_string(),
+                    player: state::Player::new(&player_opt.as_ref().unwrap().name, &*game),
+                });
+                game_opt.replace(game_addr.clone());
             } else {
                 return Err(error::ErrorNotFound("Game not found. Try going to lobby."));
             }
         }
+
         return ws::start(
             Ws {
                 uuid: uuid.to_string(),
@@ -87,28 +98,26 @@ impl Actor for Ws {
 
 impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
     fn started(&mut self, ctx: &mut Self::Context) {
-        println!("player connected: {}", &self.player.name);
+        info!("player connected: {}", &self.player.name);
         self.player.addr.replace(ctx.address().clone());
         let ret = self.game.send(decrypto::PlayerConnected {
             uuid: self.uuid.clone(),
             addr: ctx.address().clone(),
         });
-        println!("player_connected: {:?}", ret.wait().unwrap());
+        info!("player_connected: {:?}", ret.wait().unwrap());
     }
 
     fn finished(&mut self, ctx: &mut Self::Context) {
-        println!("player disconnected: {}", &self.player.name);
+        info!("player disconnected: {}", &self.player.name);
         self.player.addr.take();
-        let ret = self
-            .game
-            .send(decrypto::PlayerDisconnected {
-                uuid: self.uuid.clone(),
-            });
-        println!("player_disconnected: {:?}", ret.wait().unwrap());
+        let ret = self.game.send(decrypto::PlayerDisconnected {
+            uuid: self.uuid.clone(),
+        });
+        info!("player_disconnected: {:?}", ret.wait().unwrap());
     }
 
     fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
-        println!("GOT: {:?}", &msg);
+        info!("GOT: {:?}", &msg);
         match msg {
             ws::Message::Ping(msg) => ctx.pong(&msg),
             ws::Message::Text(text) => match self.handle_text(&text, ctx) {
@@ -132,7 +141,7 @@ impl Ws {
         if !value.is_object() {
             return Err(format!("Invalid json object: {}", text));
         }
-        println!("Got JSON from {}: {}", &self.player.name, &text);
+        info!("Got JSON from {}: {}", &self.player.name, &text);
         let cmd = &value["command"];
         if cmd.is_null() || !cmd.is_string() {
             return Err(format!("Missing or invalid command: {}", text));
@@ -186,5 +195,16 @@ impl Handler<SendCommand> for Ws {
 
     fn handle(&mut self, msg: SendCommand, ctx: &mut Self::Context) {
         ctx.text(msg.json);
+    }
+}
+
+#[derive(Clone, Message)]
+pub struct ForceDisconnect {}
+
+impl Handler<ForceDisconnect> for Ws {
+    type Result = ();
+
+    fn handle(&mut self, msg: ForceDisconnect, ctx: &mut Self::Context) {
+        ctx.stop();
     }
 }

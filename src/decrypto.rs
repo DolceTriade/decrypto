@@ -115,6 +115,7 @@ impl Handler<PlayerConnected> for Decrypto {
     type Result = Result<(), String>;
 
     fn handle(&mut self, msg: PlayerConnected, _: &mut Context<Self>) -> Self::Result {
+        info!("handler player_connected");
         return self.player_connected(msg.uuid, msg.addr);
     }
 }
@@ -175,21 +176,27 @@ impl Decrypto {
     }
 
     fn add_player(&mut self, uuid: String, player: state::Player) {
-        println!("Adding player {} {}", &uuid, &player.name);
+        info!("Adding player {} {}", &uuid, &player.name);
         self.players.insert(uuid, player);
     }
 
     fn player_connected(&mut self, uuid: String, addr: Addr<game::Ws>) -> Result<(), String> {
+        info!("decrypto::player_connected");
         match self.players.get_mut(&uuid) {
             Some(player) => {
-                player.addr.replace(addr);
+                if let Some(old_addr) = player.addr.replace(addr) {
+                    info!("decrypto::player_connected forcedisconnect");
+                    old_addr.do_send(game::ForceDisconnect {});
+                }
             }
             None => return Err(format!("Player with UUID {} not in room!", &uuid)),
         }
         let player = self.players.get(&uuid).unwrap();
         let json =
             json!({"command": "player_connected", "player": player.name.clone()}).to_string();
+        info!("decrypto::player_connected send json to players");
         self.send_to_players(&json, None)?;
+        info!("decrypto::player_connected send players to player");
         self.players.values().try_for_each(|p| {
             if &p.name == &player.name {
                 return Ok(());
@@ -199,6 +206,7 @@ impl Decrypto {
                 &json!({"command": "player_connected", "player": p.name.clone()}).to_string(),
             )
         })?;
+        info!("decrypto::player_connected send teams to player");
         [(&self.team_a, "a"), (&self.team_b, "b")]
             .iter()
             .try_for_each(|team| {
@@ -209,18 +217,26 @@ impl Decrypto {
                     )
                 })
             })?;
+        info!("decrypto::player_connected send host to player");
         self.send_to_player(
             &player,
             &json!({"command": "new_host", "player": &self.players.get_index(0).unwrap().1.name})
                 .to_string(),
         )?;
-        let teams = self
-            .team_for_player(&player.name)
-            .ok_or(format!("{} not on team!", &player.name))?;
-        for round_number in 0..teams.0.rounds.len() {
-            let round_json = build_round_info(round_number + 1, teams.0, teams.1)?;
-            self.send_to_player(&player, &round_json.to_string())?;
+        info!("decrypto::player_connected send rounds to player");
+        if self.state != State::Setup {
+            if let Some(teams) = self.team_for_player(&player.name) {
+                for round_number in 0..teams.0.rounds.len() {
+                    let round_json = build_round_info(round_number + 1, teams.0, teams.1)?;
+                    self.send_to_player(&player, &round_json.to_string())?;
+                }
+                self.send_to_player(
+                    &player,
+                    &json!({"command": "words", "words": &teams.0.words}).to_string(),
+                )?;
+            }
         }
+        info!("decrypto::player_connected done");
         return Ok(());
     }
 
@@ -239,7 +255,7 @@ impl Decrypto {
                     }
                 }
                 None => {
-                    println!("players in room : {:?}", &self.players);
+                    info!("players in room : {:?}", &self.players);
                     return Err(format!("Player with UUID {} not in room!", &uuid));
                 }
             }
@@ -265,7 +281,7 @@ impl Decrypto {
     }
 
     fn add_player_a(&mut self, player: String) -> Result<(), String> {
-        println!("Adding player to team a: {}", &player);
+        info!("Adding player to team a: {}", &player);
         if self.team_b.players.contains(&player) {
             return Err(format!("{} is already on team B", &player));
         }
@@ -275,7 +291,7 @@ impl Decrypto {
     }
 
     fn add_player_b(&mut self, player: String) -> Result<(), String> {
-        println!("Adding player to team b: {}", &player);
+        info!("Adding player to team b: {}", &player);
         if self.team_a.players.contains(&player) {
             return Err(format!("{} is already on team A", &player));
         }
@@ -285,7 +301,7 @@ impl Decrypto {
     }
 
     fn leave_team(&mut self, player: String) -> Result<(), String> {
-        println!("Player leaving team: {}", &player);
+        info!("Player leaving team: {}", &player);
         if self.state != State::Setup {
             return Err("Cannot leave after the game has started!".to_string());
         }
@@ -445,7 +461,7 @@ impl Decrypto {
 
     fn send_words(&mut self) -> Result<(), String> {
         let json_a = json!({"command": "words", "words": &self.team_a.words});
-        let json_b = json!({"command": "words", "words": &self.team_a.words});
+        let json_b = json!({"command": "words", "words": &self.team_b.words});
         self.send_to_players(&json_a.to_string(), Some(&self.team_a))?;
         self.send_to_players(&json_b.to_string(), Some(&self.team_b))?;
         return Ok(());

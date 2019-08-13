@@ -8,7 +8,10 @@ extern crate serde;
 extern crate serde_json;
 #[macro_use]
 extern crate tera;
+extern crate simple_logging;
 extern crate uuid;
+#[macro_use]
+extern crate log;
 
 use actix::prelude::*;
 use actix_session::{CookieSession, Session};
@@ -28,6 +31,7 @@ fn p404(state: web::Data<state::AppState>) -> Result<HttpResponse, Error> {
 }
 
 fn main() {
+    simple_logging::log_to_stderr(log::LevelFilter::Info);
     let wordlist: Vec<String> = read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/words.txt"))
         .unwrap()
         .lines()
@@ -44,6 +48,7 @@ fn main() {
             wordlist: wordlist.clone(),
             games: games.clone(),
             players: players.clone(),
+            arbiter: Arbiter::new(),
         };
         App::new()
             .data(state)
@@ -54,11 +59,11 @@ fn main() {
             .route("/", web::get().to(lobby::lobby))
             .service(web::resource("/lobby_ws").route(web::get().to(lobby::lobby_ws)))
             .service(
-                web::resource("/game")
+                web::resource("/game/{name}")
                     .route(web::get().to(game::game))
                     .name("game"),
             )
-            .service(web::resource("/game_ws").route(web::get().to(game::game_ws)))
+            .service(web::resource("/game/{name}/ws").route(web::get().to(game::game_ws)))
             .default_service(web::route().to(p404))
     })
     .bind("127.0.0.1:8080")

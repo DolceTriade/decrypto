@@ -5,7 +5,7 @@ me = '';
 host = '';
 state = 'setup';
 
-s = new WebSocket('ws://' + document.domain + ':' + location.port + '/game_ws');
+s = new WebSocket('ws://' + document.domain + ':' + location.port + location.pathname + '/ws');
 
 s.onerror = function (e) {
   console.log("ERROR:");
@@ -52,8 +52,8 @@ s.onmessage = function (msg) {
         team_a.add(d['name']);
         team = team_a;
       } else if (d['team'] === 'b') {
-        team_b.add(d['name']); 
-        team = team_b; 
+        team_b.add(d['name']);
+        team = team_b;
       } else {
         console.log('ERROR: joined_team: invalid team: ' + d['team']);
         return;
@@ -65,8 +65,8 @@ s.onmessage = function (msg) {
       if (d['team'] == 'a') {
         team_a.add(d['name']);
         team = team_a;
-      } else if (d['team'] == 'b') { 
-        team_b.add(d['name']); team = team_b; 
+      } else if (d['team'] == 'b') {
+        team_b.add(d['name']); team = team_b;
       } else {
         console.log('ERROR: left_team: invalid team: ' + d['team']);
         return;
@@ -75,6 +75,17 @@ s.onmessage = function (msg) {
     } break;
     case 'new_host': {
       on_new_host(d['player']);
+    } break;
+    case 'words': {
+      var container = document.getElementById('main');
+      container.innerHTML = '';
+      for (var i = 0; i < d['words'].length; ++i) {
+        var child = document.createElement('span');
+        child.id = "word" + (i + 1);
+        child.className = "words";
+        child.innerHTML = d['words'][i];
+        container.appendChild(child);
+      }
     } break;
   }
 }
@@ -138,13 +149,13 @@ function leave_team() {
 }
 
 function start_game() {
-  s.send(JSON.stringify({ 'command': 'start_game'}));
+  s.send(JSON.stringify({ 'command': 'start_game' }));
 }
 
 function show_team_select(show) {
   if (state != 'setup') {
     return;
-  }  
+  }
   if (show) {
     $('#teamselect').show();
     $('#leaveteam').hide();
@@ -155,7 +166,7 @@ function show_team_select(show) {
 }
 
 function set_host() {
-  [team_a, team_b].forEach(function(team) {
+  [team_a, team_b].forEach(function (team) {
     if (!team.has(host)) return;
     var container = team === team_a ? document.getElementById('team_a') : document.getElementById('team_b');
     for (var i = 0; i < container.children.length; ++i) {

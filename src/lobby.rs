@@ -2,6 +2,7 @@ use crate::decrypto;
 use crate::state;
 use crate::utils;
 
+use actix::prelude::*;
 use actix::*;
 use actix_session::{Session, UserSession};
 use actix_web::{error, web, Error, HttpRequest, HttpResponse};
@@ -13,7 +14,7 @@ pub fn lobby(session: Session, state: web::Data<state::AppState>) -> Result<Http
     if let Ok(Some(uuid)) = &session.get::<String>("uuid") {
     } else {
         let uuid = Uuid::new_v4();
-        println!("Setting UUID = {:?}", &uuid);
+        info!("Setting UUID = {:?}", &uuid);
         session.set("uuid", uuid.to_simple().to_string())?;
     }
     utils::render_template(state, "index.html")
@@ -53,7 +54,7 @@ impl Actor for Ws {
 
 impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
     fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
-        println!("GOT: {:?}", &msg);
+        info!("GOT: {:?}", &msg);
         match msg {
             ws::Message::Ping(msg) => ctx.pong(&msg),
             ws::Message::Text(text) => match self.handle_text(&text, ctx) {
@@ -85,10 +86,10 @@ impl Ws {
             "join_or_create_game" => {
                 let name = validate_and_get_name(&value["name"])?;
                 let room = validate_and_get_name(&value["room"])?;
-                let empty: [String; 0] = [];
+                let args = vec![&room];
                 let game_url = self
                     .req
-                    .url_for("game", &empty)
+                    .url_for("game", &args)
                     .map_err(|e| format!("Error generating URL: {:?}", &e))?;
                 {
                     let mut players = self.state.players.lock().unwrap();
@@ -109,7 +110,13 @@ impl Ws {
                         json!({"command": "join_game", "game": game_url.as_str()}).to_string()
                     );
                 }
-                let game_addr = decrypto::Decrypto::new(&self.state.wordlist).start();
+                let words = self.state.wordlist.clone();
+                let game_addr = self
+                    .state
+                    .arbiter
+                    .exec(move || decrypto::Decrypto::new(&words).start())
+                    .wait()
+                    .unwrap();
                 games.insert(room.to_lowercase(), game_addr.clone());
                 game_addr.do_send(decrypto::AddPlayerToGame {
                     uuid: self.uuid.clone(),
