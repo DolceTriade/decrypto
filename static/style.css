@@ -137,10 +137,8 @@ a.pure-button-primary {
     overflow: auto;
     /* The following styles are required for the "scroll-over" effect */
     width: 100%;
-    height: 88%;
     top: 0;
     left: 0;
-    position: fixed !important;
 }
 
 .splash {
@@ -229,17 +227,56 @@ a.pure-button-primary {
 }
 
 .sidebar {
-    position: absolute;
+    position: relative;
     width: 10%;
     height: 50%;
     top: 50%;
-    right: 1%;
+    left: 1%;
     transform: translateY(-50%);
     color: white;
 }
 
 .sidebar .splash-head {
     font-size: 1em;
+}
+
+/* This is the main heading that appears on the blue section */
+.words {
+    font-size: 1em;
+    font-weight: bold;
+    color: white;
+    border: 3px solid white;
+    padding: 1em 1.6em;
+    font-weight: 20;
+    border-radius: 5px;
+    line-height: 1em;
+}
+
+.me {
+    font-weight: bold;
+}
+
+.host {
+    font-style: italic;
+}
+
+.words .position {
+    position: relative;
+    top: 1%;
+    right: 1%;
+    font-size: 0.5em;
+    color: black;
+}
+
+.table {
+    border: 3px solid white;
+    width: 100%;
+    min-height: 10%;
+}
+
+.table .left, .table .right {
+    display: flex;
+    flex: 50%;
 }
 
 /*

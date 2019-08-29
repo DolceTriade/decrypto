@@ -227,7 +227,7 @@ impl Decrypto {
         if self.state != State::Setup {
             if let Some(teams) = self.team_for_player(&player.name) {
                 for round_number in 0..teams.0.rounds.len() {
-                    let round_json = build_round_info(round_number + 1, teams.0, teams.1)?;
+                    let round_json = build_round_info(round_number, teams.0, teams.1)?;
                     self.send_to_player(&player, &round_json.to_string())?;
                 }
                 self.send_to_player(
@@ -618,12 +618,12 @@ fn build_round_info(
     other_team: &Team,
 ) -> Result<serde_json::Value, String> {
     let round = team.rounds.get(round_number).ok_or(format!(
-        "Team rounds out of bounds {} != {}.",
+        "Team rounds out of bounds {} <> {}.",
         &round_number,
         team.rounds.len()
     ))?;
     let other_round = other_team.rounds.get(round_number).ok_or(format!(
-        "Other Team rounds out of bounds {} != {}.",
+        "Other Team rounds out of bounds {} <> {}.",
         &round_number,
         other_team.rounds.len()
     ))?;

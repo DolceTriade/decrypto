@@ -82,8 +82,15 @@ s.onmessage = function (msg) {
       for (var i = 0; i < d['words'].length; ++i) {
         var child = document.createElement('span');
         child.id = "word" + (i + 1);
-        child.className = "words";
-        child.innerHTML = d['words'][i];
+        child.className = "words splash-head";
+        var number = document.createElement('span');
+        number.className = 'position';
+        number.innerHTML = (i + 1).toString();
+        child.appendChild(number);
+        var word = document.createElement('span');
+        word.className = 'word';
+        word.innerHTML = d['words'][i];
+        child.appendChild(word);
         container.appendChild(child);
       }
     } break;
@@ -107,7 +114,10 @@ function on_player_joined_team(player, team) {
   child.id = player;
   child.innerHTML = player;
   if (player == host) {
-    child.className = 'host';
+    child.classList.add('host');
+  }
+  if (player == me) {
+    child.classList.add('me');
   }
   container.appendChild(child);
   if (player == me) {
@@ -179,4 +189,27 @@ function set_host() {
   if (host == me) {
     $('#startgame').show();
   }
+}
+
+function add_round(round) {
+  var guesssheet = document.getElementById('guesssheet');
+  var table_container = document.createElement('div');
+  table_container.id = "round" + round;
+  var table = document.createElement('table');
+  for (var i = 0; i < 3; ++i) {
+    var tr = document.createElement('tr');
+    var hint_container = document.createElement('td');
+    hint_container.className = 'hint';
+    var hint = document.createElement('input');
+    hint_container.appendChild(hint);
+    tr.appendChild(hint_container);
+    var guess_container = document.createElement('td');
+    guess_container.className = 'guess';
+    var guess = document.createElement('input');
+    guess_container.appendChild(guess);
+    tr.appendChild(guess_container);
+    table.appendChild(tr);
+  }
+  table_container.appendChild(table);
+  guesssheet.appendChild(table_container);
 }

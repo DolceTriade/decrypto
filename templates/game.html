@@ -6,8 +6,8 @@
 {% block header %}Decrypto: {{ game }}{% endblock header %}
 {% block content %}
 <div class="splash-container">
-    <div class="splash">
-        <p id="main" class="splash-head">
+    <div id="main" class="splash">
+        <p class="splash-head">
             Waiting for game to start.
         </p>
         <p id="teamselect" class="content-head setup noteam">
@@ -21,11 +21,40 @@
             <a class="pure-button pure-button-primary" onClick="start_game();">Start Game</a>
         </p>
     </div>
+    <div id="guesssheet" class="table">
+        <div class="left">
+            <div id="round1" class="round"></div>
+            <div id="round2" class="round"></div>
+            <div id="round3" class="round"></div>
+            <div id="round4" class="round"></div>
+        </div>
+        <div class="rigt">
+            <div id="round5" class="round"></div>
+            <div id="round6" class="round"></div>
+            <div id="round7" class="round"></div>
+            <div id="round8" class="round"></div>
+        </div>
+    </div>
+    <div id="spysheet" class="table">
+        <div class="left">
+            <div id="spyround1" class="round"></div>
+            <div id="spyround2" class="round"></div>
+            <div id="spyround3" class="round"></div>
+            <div id="spyround4" class="round"></div>
+        </div>
+        <div class="right">
+            <div id="spyround5" class="round"></div>
+            <div id="spyround6" class="round"></div>
+            <div id="spyround7" class="round"></div>
+            <div id="spyround8" class="round"></div>
+        </div>
+    </div>
     <div class="sidebar">
         Team A
         <div id="team_a" class="splash-head"></div>
         Team B
         <div id="team_b" class="splash-head"></div>
     </div>
+
 </div>
 {% endblock content %}
