@@ -23,7 +23,7 @@ pub struct Decrypto {
     team_a: Team,
     team_b: Team,
     state: State,
-    // UUID -> name
+    // UUID -> state::Player
     players: IndexMap<String, state::Player>,
 }
 
@@ -148,6 +148,22 @@ impl Handler<StartGame> for Decrypto {
     }
 }
 
+#[derive(Message)]
+#[rtype(result = "Result<(), String>")]
+pub struct GiveClues {
+    pub name: String,
+    pub clues: [String; 3],
+    pub round: usize,
+}
+
+impl Handler<GiveClues> for Decrypto {
+    type Result = Result<(), String>;
+
+    fn handle(&mut self, msg: GiveClues, _: &mut Context<Self>) -> Self::Result {
+        return self.give_clues(&msg.clues, &msg.name, round);
+    }
+}
+
 impl Decrypto {
     pub fn new(wordlist: &[String]) -> Self {
         assert!(wordlist.len() >= 8);
@@ -226,14 +242,26 @@ impl Decrypto {
         info!("decrypto::player_connected send rounds to player");
         if self.state != State::Setup {
             if let Some(teams) = self.team_for_player(&player.name) {
-                for round_number in 0..teams.0.rounds.len() {
-                    let round_json = build_round_info(round_number, teams.0, teams.1)?;
-                    self.send_to_player(&player, &round_json.to_string())?;
-                }
                 self.send_to_player(
                     &player,
                     &json!({"command": "words", "words": &teams.0.words}).to_string(),
                 )?;
+                for round_number in 0..teams.0.rounds.len() {
+                    let round_json = build_round_info(round_number, teams.0, teams.1)?;
+                    self.send_to_player(&player, &round_json.to_string())?;
+                }
+                if teams
+                    .0
+                    .players
+                    .get_index(teams.0.active_player_index)
+                    .unwrap()
+                    == &player.name
+                {
+                    if let Some(round) = teams.0.rounds.last() {
+                        let json_order = json!({"command": "order", "number": teams.0.rounds.len() - 1, "order": &round.order.clone()});
+                        self.send_to_player(&player, &json_order.to_string())?;
+                    }
+                }
             }
         }
         info!("decrypto::player_connected done");
@@ -359,6 +387,16 @@ impl Decrypto {
         return spy_guess_team(&guess, &mut self.team_b, &mut self.team_a);
     }
 
+    pub fn give_clues(&mut self, clues: &[String; 3], name: &str, round: usize) -> Result<(), String> {
+        if let Some(mut teams) = self.team_for_player_mut(name) {
+            if teams.0.rounds.len() <= round {
+                return Err(format!("Invalid round number!: {}", &round).to_string());
+            }
+            return give_clues_team(clues, teams.0);
+        }
+        return Err(format!("Team for {} not found", name).to_string());
+    }
+
     pub fn give_clues_a(&mut self, clues: &[String; 3]) -> Result<(), String> {
         return give_clues_team(clues, &mut self.team_a);
     }
@@ -422,6 +460,15 @@ impl Decrypto {
             return Some((&self.team_a, &self.team_b));
         } else if self.team_b.players.contains(name) {
             return Some((&self.team_b, &self.team_b));
+        }
+        return None;
+    }
+
+    fn team_for_player_mut(&mut self, name: &str) -> Option<(&mut Team, &mut Team)> {
+        if self.team_a.players.contains(name) {
+            return Some((&mut self.team_a, &mut self.team_b));
+        } else if self.team_b.players.contains(name) {
+            return Some((&mut self.team_b, &mut self.team_a));
         }
         return None;
     }
