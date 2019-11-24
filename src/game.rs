@@ -179,6 +179,59 @@ impl Ws {
                     .wait()
                     .map_err(|e| format!("{:?}", e))??;
             }
+            "clues" => {
+                let clues_json = &value["clues"];
+                if !clues_json.is_array() {
+                    return Err(format!("Invalid clues json: {}", text));
+                }
+                if (clues_json.as_array().unwrap().len() != 3) {
+                    return Err(format!("Invalid number of clues: {}", text));
+                }
+                let round = &value["number"];
+                if !round.is_u64() {
+                    return Err(format!("Invalid round number: {}", round));
+                }
+                let mut clues: [String; 3] = Default::default();
+                for i in 0..3 {
+                    clues[i] = utils::json_string(&clues_json[i])?;
+                }
+                self.game
+                    .send(decrypto::GiveClues {
+                        name: self.player.name.clone(),
+                        clues: clues,
+                        round: round.as_u64().unwrap() as usize,
+                    })
+                    .wait()
+                    .map_err(|e| format!("{:?}", e))??;
+            }
+            "guesses" => {
+                let guess_json = &value["guesses"];
+                if !guess_json.is_array() {
+                    return Err(format!("Invalid guesses json: {}", text));
+                }
+                if (guess_json.as_array().unwrap().len() != 3) {
+                    return Err(format!("Invalid number of guesses: {}", text));
+                }
+                let round = &value["number"];
+                if !round.is_u64() {
+                    return Err(format!("Invalid round number: {}", round));
+                }
+                let mut guesses: [u8; 3] = Default::default();
+                for i in 0..3 {
+                    if !guess_json[i].is_u64() {
+                        return Err(format!("Guesses must be numbers: {}", text));
+                    }
+                    guesses[i] = guess_json[i].as_u64().unwrap() as u8;
+                }
+                self.game
+                    .send(decrypto::GuessClues {
+                        name: self.player.name.clone(),
+                        guesses: guesses,
+                        round: round.as_u64().unwrap() as usize,
+                    })
+                    .wait()
+                    .map_err(|e| format!("{:?}", e))??;
+            }
             _ => {}
         }
         return Ok("".to_string());

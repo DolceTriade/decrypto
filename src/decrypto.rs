@@ -27,6 +27,7 @@ pub struct Decrypto {
     players: IndexMap<String, state::Player>,
 }
 
+#[derive(Debug)]
 pub struct Team {
     players: IndexSet<String>,
     active_player_index: usize,
@@ -36,6 +37,7 @@ pub struct Team {
     rounds: Vec<Round>,
 }
 
+#[derive(Debug)]
 pub struct Round {
     clue_giver: usize,
     order: [u8; 3],
@@ -160,7 +162,23 @@ impl Handler<GiveClues> for Decrypto {
     type Result = Result<(), String>;
 
     fn handle(&mut self, msg: GiveClues, _: &mut Context<Self>) -> Self::Result {
-        return self.give_clues(&msg.clues, &msg.name, round);
+        return self.give_clues(&msg.clues, &msg.name, msg.round);
+    }
+}
+
+#[derive(Message)]
+#[rtype(result = "Result<(), String>")]
+pub struct GuessClues {
+    pub name: String,
+    pub guesses: [u8; 3],
+    pub round: usize,
+}
+
+impl Handler<GuessClues> for Decrypto {
+    type Result = Result<(), String>;
+
+    fn handle(&mut self, msg: GuessClues, _: &mut Context<Self>) -> Self::Result {
+        return self.guess_clues(&msg.guesses, &msg.name, msg.round);
     }
 }
 
@@ -270,14 +288,11 @@ impl Decrypto {
 
     fn player_disconnected(&mut self, uuid: String) -> Result<(), String> {
         let mut new_host = false;
+        let mut name = "".to_string();
         if self.state == State::Setup {
             match self.players.get_full(&uuid) {
                 Some((idx, _, player)) => {
-                    if self.team_a.players.contains(&player.name) {
-                        self.remove_player_a(player.name.clone())?;
-                    } else if self.team_b.players.contains(&player.name) {
-                        self.remove_player_b(player.name.clone())?;
-                    }
+                    name = player.name.clone();
                     if idx == 0 && self.players.len() > 1 {
                         new_host = true;
                     }
@@ -287,6 +302,11 @@ impl Decrypto {
                     return Err(format!("Player with UUID {} not in room!", &uuid));
                 }
             }
+        }
+        if self.team_a.players.contains(&name) {
+            self.remove_player_a(name)?;
+        } else if self.team_b.players.contains(&name) {
+            self.remove_player_b(name)?;
         }
         match self.players.remove(&uuid).as_mut() {
             Some(player) => {
@@ -379,6 +399,33 @@ impl Decrypto {
         return guess_team(&guess, &mut self.team_a);
     }
 
+    pub fn guess_clues(
+        &mut self,
+        guesses: &[u8; 3],
+        name: &str,
+        round: usize,
+    ) -> Result<(), String> {
+        println!("guess_clues {:?} {:?} {:?}", &guesses, &name, &round);
+        if let Some(teams) = self.team_for_player_mut(name) {
+            if teams.0.rounds.len() != round + 1 {
+                return Err(format!("Invalid round number!: {}", &round).to_string());
+            }
+            let empty: [u8; 3] = Default::default();
+            if teams.0.rounds[round].guess != empty {
+                return Err(format!("Clues already guessed!"));
+            }
+            let empty_clues: [String; 3] = Default::default();
+            if teams.0.rounds[round].clues == empty_clues {
+                return Err(format!("Cannot guess before clues are given!"));
+            }
+            guess_team(&guesses, teams.0)?;
+        }
+        if let Some(teams) = self.team_for_player(name) {
+            return self.send_round_info();
+        }
+        return Err(format!("Team for {} not found", name).to_string());
+    }
+
     pub fn spy_guess_a(&mut self, guess: [u8; 3]) -> Result<(), String> {
         return spy_guess_team(&guess, &mut self.team_a, &mut self.team_b);
     }
@@ -387,22 +434,23 @@ impl Decrypto {
         return spy_guess_team(&guess, &mut self.team_b, &mut self.team_a);
     }
 
-    pub fn give_clues(&mut self, clues: &[String; 3], name: &str, round: usize) -> Result<(), String> {
-        if let Some(mut teams) = self.team_for_player_mut(name) {
+    pub fn give_clues(
+        &mut self,
+        clues: &[String; 3],
+        name: &str,
+        round: usize,
+    ) -> Result<(), String> {
+        println!("give_clues {:?} {:?} {:?}", &clues, &name, &round);
+        if let Some(teams) = self.team_for_player_mut(name) {
             if teams.0.rounds.len() <= round {
                 return Err(format!("Invalid round number!: {}", &round).to_string());
             }
-            return give_clues_team(clues, teams.0);
+            give_clues_team(clues, teams.0)?;
+        }
+        if let Some(teams) = self.team_for_player(name) {
+            return self.send_round_info();
         }
         return Err(format!("Team for {} not found", name).to_string());
-    }
-
-    pub fn give_clues_a(&mut self, clues: &[String; 3]) -> Result<(), String> {
-        return give_clues_team(clues, &mut self.team_a);
-    }
-
-    pub fn give_clues_b(&mut self, clues: &[String; 3]) -> Result<(), String> {
-        return give_clues_team(clues, &mut self.team_b);
     }
 
     pub fn maybe_advance_game(&mut self) -> Result<(), String> {
@@ -459,7 +507,7 @@ impl Decrypto {
         if self.team_a.players.contains(name) {
             return Some((&self.team_a, &self.team_b));
         } else if self.team_b.players.contains(name) {
-            return Some((&self.team_b, &self.team_b));
+            return Some((&self.team_b, &self.team_a));
         }
         return None;
     }
@@ -480,7 +528,7 @@ impl Decrypto {
         return self.players.values().try_for_each(|player| {
             if let Some(addr) = &player.addr {
                 if let Some(t) = team {
-                    if t.players.contains(&player.name) {
+                    if !t.players.contains(&player.name) {
                         return Ok(());
                     }
                 }
@@ -490,19 +538,19 @@ impl Decrypto {
         });
     }
 
-    fn send_round_info(&mut self) -> Result<(), String> {
-        let json_a = build_round_info(self.team_a.rounds.len() - 1, &self.team_a, &self.team_b)?;
-        let json_b = build_round_info(self.team_b.rounds.len() - 1, &self.team_b, &self.team_a)?;
-        self.send_to_players(&json_a.to_string(), Some(&self.team_a))?;
-        self.send_to_players(&json_b.to_string(), Some(&self.team_b))?;
-        let round_a = self.team_a.rounds.last().unwrap();
-        let round_b = self.team_b.rounds.last().unwrap();
-        let json_order_a = json!({"command": "order", "number": self.team_a.rounds.len(), "order": &round_a.order.clone()});
-        let json_order_b = json!({"command": "order", "number": self.team_b.rounds.len(), "order": &round_b.order.clone()});
-        let round_a_clue_giver = self.team_a.players.get_index(round_a.clue_giver).unwrap();
-        let round_b_clue_giver = self.team_b.players.get_index(round_b.clue_giver).unwrap();
-        self.send_to_player_name(round_a_clue_giver, &json_order_a.to_string())?;
-        self.send_to_player_name(round_b_clue_giver, &json_order_b.to_string())?;
+    fn send_round_info_team(&self, team: &Team, other_team: &Team) -> Result<(), String> {
+        let json = build_round_info(team.rounds.len() - 1, team, other_team)?;
+        self.send_to_players(&json.to_string(), Some(team))?;
+        let round = team.rounds.last().unwrap();
+        let json_order = json!({"command": "order", "number": team.rounds.len() - 1, "order": &round.order.clone()});
+        let round_clue_giver = team.players.get_index(round.clue_giver).unwrap();
+        self.send_to_player_name(round_clue_giver, &json_order.to_string())?;
+        return Ok(());
+    }
+
+    fn send_round_info(&self) -> Result<(), String> {
+        self.send_round_info_team(&self.team_a, &self.team_b)?;
+        self.send_round_info_team(&self.team_b, &self.team_a)?;
         return Ok(());
     }
 
@@ -683,7 +731,7 @@ fn build_round_info(
         "command": "round",
         "number": round_number,
         "clue_giver": clue_giver,
-        "enemy_clue_giver": enemy_clue_giver,
+        "spy_clue_giver": enemy_clue_giver,
     });
     let map = json.as_object_mut().unwrap();
     if round
@@ -699,7 +747,7 @@ fn build_round_info(
         .iter()
         .fold(true, |is_set, guess| is_set && *guess > 0);
     if guessed {
-        map.insert("guess".to_string(), json!(round.guess.clone()));
+        map.insert("guesses".to_string(), json!(round.guess.clone()));
     }
 
     let spy_guessed = round
@@ -707,12 +755,21 @@ fn build_round_info(
         .iter()
         .fold(true, |is_set, guess| is_set && *guess > 0);
     if spy_guessed {
-        map.insert("spy_guess".to_string(), json!(round.spy_guess.clone()));
+        map.insert("spy_guesses".to_string(), json!(round.spy_guess.clone()));
+    }
+
+    if other_round
+        .clues
+        .iter()
+        .fold(true, |is_set, clue| is_set && !clue.is_empty())
+    {
+        map.insert("spy_clues".to_string(), json!(other_round.clues.clone()));
     }
 
     if guessed && spy_guessed {
         map.insert("order".to_string(), json!(round.order.clone()));
+        map.insert("spy_order".to_string(), json!(other_round.order.clone()));
     }
-
+    println!("round info: {:?}", &json);
     return Ok(json);
 }
