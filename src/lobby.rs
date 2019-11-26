@@ -8,17 +8,6 @@ use actix_session::{Session, UserSession};
 use actix_web::{error, web, Error, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use std::sync::Arc;
-use uuid::prelude::*;
-
-pub fn lobby(session: Session, state: web::Data<state::AppState>) -> Result<HttpResponse, Error> {
-    if let Ok(Some(uuid)) = &session.get::<String>("uuid") {
-    } else {
-        let uuid = Uuid::new_v4();
-        info!("Setting UUID = {:?}", &uuid);
-        session.set("uuid", uuid.to_simple().to_string())?;
-    }
-    utils::render_template(state, "index.html")
-}
 
 pub fn lobby_ws(
     session: Session,

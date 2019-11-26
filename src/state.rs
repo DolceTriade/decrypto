@@ -36,7 +36,6 @@ impl fmt::Debug for Player {
 }
 
 pub struct AppState {
-    pub template: tera::Tera,
     pub wordlist: Vec<String>,
     pub games: Arc<Mutex<HashMap<String, Addr<decrypto::Decrypto>>>>,
     pub players: Arc<Mutex<HashMap<String, Player>>>,

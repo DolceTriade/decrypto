@@ -9,28 +9,6 @@ use actix_web::{error, web, Error, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use std::sync::{Arc, Mutex};
 
-pub fn game(
-    game: web::Path<String>,
-    session: Session,
-    state: web::Data<state::AppState>,
-) -> Result<HttpResponse, Error> {
-    info!("game: {}", *game);
-    let mut val = serde_json::Value::default();
-    if let Ok(Some(uuid)) = &session.get::<String>("uuid") {
-        {
-            let players = state.players.lock().unwrap();
-            if let Some(player) = players.get(uuid) {
-                val["game"] = json!(*game);
-            } else {
-                return Err(error::ErrorNotFound(
-                    "Player not found. Try going to the lobby.",
-                ));
-            }
-        }
-    }
-    utils::render_template_with_args(state, "game.html", val)
-}
-
 pub fn game_ws(
     game: web::Path<String>,
     session: Session,
