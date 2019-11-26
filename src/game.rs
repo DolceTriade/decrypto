@@ -232,6 +232,34 @@ impl Ws {
                     .wait()
                     .map_err(|e| format!("{:?}", e))??;
             }
+            "spy_guesses" => {
+                let guess_json = &value["spy_guesses"];
+                if !guess_json.is_array() {
+                    return Err(format!("Invalid spy_guesses json: {}", text));
+                }
+                if (guess_json.as_array().unwrap().len() != 3) {
+                    return Err(format!("Invalid number of spy_guesses: {}", text));
+                }
+                let round = &value["number"];
+                if !round.is_u64() {
+                    return Err(format!("Invalid round number: {}", round));
+                }
+                let mut guesses: [u8; 3] = Default::default();
+                for i in 0..3 {
+                    if !guess_json[i].is_u64() {
+                        return Err(format!("Spy Guesses must be numbers: {}", text));
+                    }
+                    guesses[i] = guess_json[i].as_u64().unwrap() as u8;
+                }
+                self.game
+                    .send(decrypto::SpyGuessClues {
+                        name: self.player.name.clone(),
+                        guesses: guesses,
+                        round: round.as_u64().unwrap() as usize,
+                    })
+                    .wait()
+                    .map_err(|e| format!("{:?}", e))??;
+            }
             _ => {}
         }
         return Ok("".to_string());

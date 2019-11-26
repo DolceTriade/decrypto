@@ -182,6 +182,22 @@ impl Handler<GuessClues> for Decrypto {
     }
 }
 
+#[derive(Message)]
+#[rtype(result = "Result<(), String>")]
+pub struct SpyGuessClues {
+    pub name: String,
+    pub guesses: [u8; 3],
+    pub round: usize,
+}
+
+impl Handler<SpyGuessClues> for Decrypto {
+    type Result = Result<(), String>;
+
+    fn handle(&mut self, msg: SpyGuessClues, _: &mut Context<Self>) -> Self::Result {
+        return self.spy_guess_clues(&msg.guesses, &msg.name, msg.round);
+    }
+}
+
 impl Decrypto {
     pub fn new(wordlist: &[String]) -> Self {
         assert!(wordlist.len() >= 8);
@@ -280,6 +296,7 @@ impl Decrypto {
                         self.send_to_player(&player, &json_order.to_string())?;
                     }
                 }
+                self.send_to_player(&player, &self.score_json())?;
             }
         }
         info!("decrypto::player_connected done");
@@ -391,14 +408,6 @@ impl Decrypto {
         return self.send_round_info();
     }
 
-    pub fn guess_a(&mut self, guess: [u8; 3]) -> Result<(), String> {
-        return guess_team(&guess, &mut self.team_a);
-    }
-
-    pub fn guess_b(&mut self, guess: [u8; 3]) -> Result<(), String> {
-        return guess_team(&guess, &mut self.team_a);
-    }
-
     pub fn guess_clues(
         &mut self,
         guesses: &[u8; 3],
@@ -419,11 +428,40 @@ impl Decrypto {
                 return Err(format!("Cannot guess before clues are given!"));
             }
             guess_team(&guesses, teams.0)?;
+        } else {
+            return Err(format!("Team for {} not found", name).to_string());
         }
-        if let Some(teams) = self.team_for_player(name) {
-            return self.send_round_info();
+        return self.send_round_info();
+    }
+
+    pub fn spy_guess_clues(
+        &mut self,
+        guesses: &[u8; 3],
+        name: &str,
+        round: usize,
+    ) -> Result<(), String> {
+        println!("spy_guess_clues {:?} {:?} {:?}", &guesses, &name, &round);
+        if let Some(teams) = self.team_for_player_mut(name) {
+            if teams.0.rounds.len() != round + 1 {
+                return Err(format!("Invalid round number!: {}", &round).to_string());
+            }
+            let empty: [u8; 3] = Default::default();
+            if teams.1.rounds[round].spy_guess != empty {
+                return Err(format!("Clues already guessed!"));
+            }
+            let empty_clues: [String; 3] = Default::default();
+            if teams.1.rounds[round].clues == empty_clues {
+                return Err(format!("Cannot guess before clues are given!"));
+            }
+            spy_guess_team(&guesses, teams.1, teams.0)?;
+        } else {
+            return Err(format!("Team for {} not found", name).to_string());
         }
-        return Err(format!("Team for {} not found", name).to_string());
+        self.send_round_info()?;
+        if let Err(e) = self.maybe_advance_game() {
+            println!("Could not advance game: {:?}", &e);
+        }
+        return Ok(());
     }
 
     pub fn spy_guess_a(&mut self, guess: [u8; 3]) -> Result<(), String> {
@@ -472,19 +510,32 @@ impl Decrypto {
                 if !is_round_complete_for_team(&self.team_b) {
                     return Err("Round not complete for Team B".to_string());
                 }
-                if self.team_a.intercepts == 2 {
+                if self.team_a.intercepts == 2 && self.team_b.intercepts != 2 {
                     self.state = State::Winner("Team A".to_string());
-                } else if self.team_a.miscommunications == 2 {
+                } else if self.team_a.miscommunications == 2 && self.team_b.miscommunications != 2 {
                     self.state = State::Winner("Team B".to_string());
-                } else if self.team_b.intercepts == 2 {
+                } else if self.team_b.intercepts == 2 && self.team_a.intercepts != 2 {
                     self.state = State::Winner("Team B".to_string());
-                } else if self.team_b.miscommunications == 2 {
+                } else if self.team_b.miscommunications == 2 && self.team_a.miscommunications != 2 {
                     self.state = State::Winner("Team A".to_string());
                 } else if self.team_a.rounds.len() == 8 && self.team_b.rounds.len() == 8 {
-                    self.state = State::GuessWords;
+                    self.state = State::Tie;
+                } else if self.team_a.intercepts == 2 && self.team_b.intercepts == 2 {
+                    let a_score: i8 =
+                        self.team_a.intercepts as i8 - self.team_a.miscommunications as i8;
+                    let b_score: i8 =
+                        self.team_b.intercepts as i8 - self.team_b.miscommunications as i8;
+                    if a_score > b_score {
+                        self.state = State::Winner("Team A".to_string());
+                    } else if a_score < b_score {
+                        self.state = State::Winner("Team B".to_string());
+                    } else {
+                        self.state = State::Tie;
+                    }
                 } else {
-                    self.new_round()?;
+                    return self.new_round();
                 }
+                return self.send_round_info();
             }
             _ => {}
         }
@@ -548,10 +599,40 @@ impl Decrypto {
         return Ok(());
     }
 
+    fn score_json(&self) -> String {
+        let mut score_json = json!({"command": "score",
+            "team_a": {"intercepts": self.team_a.intercepts.clone(), "miscommunications": self.team_a.miscommunications.clone()},
+            "team_b": {"intercepts": self.team_b.intercepts.clone(), "miscommunications": self.team_b.miscommunications.clone()},
+        });
+        let map = score_json.as_object_mut().unwrap();
+        match &self.state {
+            State::Winner(winner) => {
+                map.insert("winner".to_string(), json!(&winner));
+                map.insert(
+                    "words".to_string(),
+                    json!({"team_a": self.team_a.words, "team_b": self.team_b.words}),
+                );
+            }
+            State::Tie => {
+                map.insert("tie".to_string(), json!(1));
+                map.insert(
+                    "words".to_string(),
+                    json!({"team_a": self.team_a.words, "team_b": self.team_b.words}),
+                );
+            }
+            _ => {}
+        }
+        return score_json.to_string();
+    }
+
+    fn send_score(&self) -> Result<(), String> {
+        return self.send_to_players(&self.score_json(), None);
+    }
+
     fn send_round_info(&self) -> Result<(), String> {
         self.send_round_info_team(&self.team_a, &self.team_b)?;
         self.send_round_info_team(&self.team_b, &self.team_a)?;
-        return Ok(());
+        return self.send_score();
     }
 
     fn send_words(&mut self) -> Result<(), String> {
@@ -629,7 +710,7 @@ fn generate_order() -> Result<[u8; 3], String> {
     let mut rand = rand::thread_rng();
     let mut picks: HashSet<u8> = HashSet::new();
     while picks.len() != 3 {
-        let index: u8 = rand.gen::<u8>() % 3;
+        let index: u8 = rand.gen::<u8>() % 4;
         picks.insert(index + 1);
     }
     let mut array: [u8; 3] = [0; 3];
@@ -750,12 +831,15 @@ fn build_round_info(
         map.insert("guesses".to_string(), json!(round.guess.clone()));
     }
 
-    let spy_guessed = round
+    let team_spy_guessed = other_round
         .spy_guess
         .iter()
         .fold(true, |is_set, guess| is_set && *guess > 0);
-    if spy_guessed {
-        map.insert("spy_guesses".to_string(), json!(round.spy_guess.clone()));
+    if team_spy_guessed {
+        map.insert(
+            "team_spy_guesses".to_string(),
+            json!(other_round.spy_guess.clone()),
+        );
     }
 
     if other_round
@@ -766,8 +850,14 @@ fn build_round_info(
         map.insert("spy_clues".to_string(), json!(other_round.clues.clone()));
     }
 
-    if guessed && spy_guessed {
+    let spy_guessed = round
+        .spy_guess
+        .iter()
+        .fold(true, |is_set, guess| is_set && *guess > 0);
+
+    if guessed && spy_guessed && team_spy_guessed {
         map.insert("order".to_string(), json!(round.order.clone()));
+        map.insert("spy_guesses".to_string(), json!(round.spy_guess.clone()));
         map.insert("spy_order".to_string(), json!(other_round.order.clone()));
     }
     println!("round info: {:?}", &json);
