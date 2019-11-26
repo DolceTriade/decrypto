@@ -485,7 +485,7 @@ impl Decrypto {
             }
             give_clues_team(clues, teams.0)?;
         }
-        if let Some(teams) = self.team_for_player(name) {
+        if let Some(_teams) = self.team_for_player(name) {
             return self.send_round_info();
         }
         return Err(format!("Team for {} not found", name).to_string());

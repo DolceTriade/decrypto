@@ -4,10 +4,10 @@ use crate::utils;
 
 use actix::prelude::*;
 use actix::AsyncContext;
-use actix_session::{Session, UserSession};
+use actix_session::{Session};
 use actix_web::{error, web, Error, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
-use std::sync::{Arc, Mutex};
+
 
 pub fn game_ws(
     game: web::Path<String>,
@@ -41,7 +41,7 @@ pub fn game_ws(
             }
             if let Some(game_addr) = games.get(&*game.to_lowercase()) {
                 info!("Found game!");
-                let res = game_addr.do_send(decrypto::AddPlayerToGame {
+                let _res = game_addr.do_send(decrypto::AddPlayerToGame {
                     uuid: uuid.to_string(),
                     player: state::Player::new(&player_opt.as_ref().unwrap().name, &*game),
                 });
@@ -85,7 +85,7 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
         info!("player_connected: {:?}", ret.wait().unwrap());
     }
 
-    fn finished(&mut self, ctx: &mut Self::Context) {
+    fn finished(&mut self, _ctx: &mut Self::Context) {
         info!("player disconnected: {}", &self.player.name);
         self.player.addr.take();
         let ret = self.game.send(decrypto::PlayerDisconnected {
@@ -162,7 +162,7 @@ impl Ws {
                 if !clues_json.is_array() {
                     return Err(format!("Invalid clues json: {}", text));
                 }
-                if (clues_json.as_array().unwrap().len() != 3) {
+                if clues_json.as_array().unwrap().len() != 3 {
                     return Err(format!("Invalid number of clues: {}", text));
                 }
                 let round = &value["number"];
@@ -187,7 +187,7 @@ impl Ws {
                 if !guess_json.is_array() {
                     return Err(format!("Invalid guesses json: {}", text));
                 }
-                if (guess_json.as_array().unwrap().len() != 3) {
+                if guess_json.as_array().unwrap().len() != 3 {
                     return Err(format!("Invalid number of guesses: {}", text));
                 }
                 let round = &value["number"];
@@ -215,7 +215,7 @@ impl Ws {
                 if !guess_json.is_array() {
                     return Err(format!("Invalid spy_guesses json: {}", text));
                 }
-                if (guess_json.as_array().unwrap().len() != 3) {
+                if guess_json.as_array().unwrap().len() != 3 {
                     return Err(format!("Invalid number of spy_guesses: {}", text));
                 }
                 let round = &value["number"];
@@ -263,7 +263,7 @@ pub struct ForceDisconnect {}
 impl Handler<ForceDisconnect> for Ws {
     type Result = ();
 
-    fn handle(&mut self, msg: ForceDisconnect, ctx: &mut Self::Context) {
+    fn handle(&mut self, _msg: ForceDisconnect, ctx: &mut Self::Context) {
         ctx.stop();
     }
 }

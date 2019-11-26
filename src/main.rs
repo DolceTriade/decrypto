@@ -25,8 +25,8 @@ mod lobby;
 mod state;
 mod utils;
 
-pub fn default(session: Session, state: web::Data<state::AppState>) -> Result<HttpResponse, Error> {
-    if let Ok(Some(uuid)) = &session.get::<String>("uuid") {
+pub fn default(session: Session, _state: web::Data<state::AppState>) -> Result<HttpResponse, Error> {
+    if let Ok(Some(_uuid)) = &session.get::<String>("uuid") {
     } else {
         let uuid = Uuid::new_v4();
         info!("Setting UUID = {:?}", &uuid);

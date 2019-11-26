@@ -3,11 +3,11 @@ use crate::state;
 use crate::utils;
 
 use actix::prelude::*;
-use actix::*;
-use actix_session::{Session, UserSession};
+
+use actix_session::{Session};
 use actix_web::{error, web, Error, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
-use std::sync::Arc;
+
 
 pub fn lobby_ws(
     session: Session,
