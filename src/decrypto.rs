@@ -198,6 +198,36 @@ impl Handler<SpyGuessClues> for Decrypto {
     }
 }
 
+#[derive(Message)]
+#[rtype(result = "Result<(), String>")]
+pub struct TeamChat {
+    pub name: String,
+    pub msg: String,
+}
+
+impl Handler<TeamChat> for Decrypto {
+    type Result = Result<(), String>;
+
+    fn handle(&mut self, msg: TeamChat, _: &mut Context<Self>) -> Self::Result {
+        return self.team_chat(&msg.name, &msg.msg);
+    }
+}
+
+#[derive(Message)]
+#[rtype(result = "Result<(), String>")]
+pub struct AllChat {
+    pub name: String,
+    pub msg: String,
+}
+
+impl Handler<AllChat> for Decrypto {
+    type Result = Result<(), String>;
+
+    fn handle(&mut self, msg: AllChat, _: &mut Context<Self>) -> Self::Result {
+        return self.all_chat(&msg.name, &msg.msg);
+    }
+}
+
 impl Decrypto {
     pub fn new(wordlist: &[String]) -> Self {
         assert!(wordlist.len() >= 8);
@@ -552,6 +582,19 @@ impl Decrypto {
             None => return Err("Unknown player tried to start the game.".to_string()),
         }
         return self.maybe_advance_game();
+    }
+
+    pub fn team_chat(&mut self, name: &str, msg: &str) -> Result<(), String> {
+        if let Some(teams) = self.team_for_player(name) {
+            let chat_json = json!({"command": "team_chat", "message": msg, "name": name});
+            return self.send_to_players(&chat_json.to_string(), Some(teams.0));
+        }
+        return Err("Cannot team chat unless on a team!".to_string());
+    }
+
+    pub fn all_chat(&mut self, name: &str, msg: &str) -> Result<(), String> {
+        let chat_json = json!({"command": "all_chat", "message": msg, "name": name});
+        return self.send_to_players(&chat_json.to_string(), None);
     }
 
     fn team_for_player(&self, name: &str) -> Option<(&Team, &Team)> {

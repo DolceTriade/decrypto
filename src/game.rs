@@ -4,10 +4,9 @@ use crate::utils;
 
 use actix::prelude::*;
 use actix::AsyncContext;
-use actix_session::{Session};
+use actix_session::Session;
 use actix_web::{error, web, Error, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
-
 
 pub fn game_ws(
     game: web::Path<String>,
@@ -234,6 +233,32 @@ impl Ws {
                         name: self.player.name.clone(),
                         guesses: guesses,
                         round: round.as_u64().unwrap() as usize,
+                    })
+                    .wait()
+                    .map_err(|e| format!("{:?}", e))??;
+            }
+            "team_chat" => {
+                let chat_json = &value["message"];
+                if !chat_json.is_string() {
+                    return Err("team_chat must be a string.".to_string());
+                }
+                self.game
+                    .send(decrypto::TeamChat {
+                        name: self.player.name.clone(),
+                        msg: chat_json.as_str().unwrap().to_string(),
+                    })
+                    .wait()
+                    .map_err(|e| format!("{:?}", e))??;
+            }
+            "all_chat" => {
+                let chat_json = &value["message"];
+                if !chat_json.is_string() {
+                    return Err("all_chat must be a string.".to_string());
+                }
+                self.game
+                    .send(decrypto::AllChat {
+                        name: self.player.name.clone(),
+                        msg: chat_json.as_str().unwrap().to_string(),
                     })
                     .wait()
                     .map_err(|e| format!("{:?}", e))??;

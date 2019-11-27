@@ -4,10 +4,9 @@ use crate::utils;
 
 use actix::prelude::*;
 
-use actix_session::{Session};
+use actix_session::Session;
 use actix_web::{error, web, Error, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
-
 
 pub fn lobby_ws(
     session: Session,
