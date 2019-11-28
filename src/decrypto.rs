@@ -369,12 +369,8 @@ impl Decrypto {
                     self.send_to_players(&json, None)?;
                 }
                 let mut del_game = false;
-                if let Some(addr) = player.addr.take() {
-                    if self.players.len() == 0 {
-                        del_game = true;
-                    }
-                } else {
-                    println!("Player has no addr!");
+                if self.players.len() == 0 {
+                    del_game = true;
                 }
                 return Ok(del_game);
             }

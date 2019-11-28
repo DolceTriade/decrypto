@@ -94,9 +94,11 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
         let response = ret.wait().unwrap();
         info!("player_disconnected: {:?}", &response);
         if let Ok(delete_game) = response {
-            info!("Deleting game: {}", &self.player.game);
-            let mut games = self.state.games.lock().unwrap();
-            games.remove(&self.player.game);
+            if delete_game {
+                info!("Deleting game: {}", &self.player.game);
+                let mut games = self.state.games.lock().unwrap();
+                games.remove(&self.player.game);
+            }
         }
     }
 
