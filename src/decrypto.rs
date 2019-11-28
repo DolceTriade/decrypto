@@ -123,13 +123,13 @@ impl Handler<PlayerConnected> for Decrypto {
 }
 
 #[derive(Message)]
-#[rtype(result = "Result<(), String>")]
+#[rtype(result = "Result<bool, String>")]
 pub struct PlayerDisconnected {
     pub uuid: String,
 }
 
 impl Handler<PlayerDisconnected> for Decrypto {
-    type Result = Result<(), String>;
+    type Result = Result<bool, String>;
 
     fn handle(&mut self, msg: PlayerDisconnected, _: &mut Context<Self>) -> Self::Result {
         return self.player_disconnected(msg.uuid);
@@ -333,7 +333,7 @@ impl Decrypto {
         return Ok(());
     }
 
-    fn player_disconnected(&mut self, uuid: String) -> Result<(), String> {
+    fn player_disconnected(&mut self, uuid: String) -> Result<bool, String> {
         let mut new_host = false;
         let mut name = "".to_string();
         if self.state == State::Setup {
@@ -357,7 +357,6 @@ impl Decrypto {
         }
         match self.players.remove(&uuid).as_mut() {
             Some(player) => {
-                player.addr.take();
                 {
                     let json =
                         json!({"command": "player_disconnected", "player": player.name.clone()})
@@ -369,7 +368,15 @@ impl Decrypto {
                         json!({"command": "new_host", "player": &self.players.get_index(0).unwrap().1.name}).to_string();
                     self.send_to_players(&json, None)?;
                 }
-                return Ok(());
+                let mut del_game = false;
+                if let Some(addr) = player.addr.take() {
+                    if self.players.len() == 0 {
+                        del_game = true;
+                    }
+                } else {
+                    println!("Player has no addr!");
+                }
+                return Ok(del_game);
             }
             None => return Err(format!("Player with UUID {} not in room!", &uuid)),
         }

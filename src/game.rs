@@ -55,6 +55,7 @@ pub fn game_ws(
                 uuid: uuid.to_string(),
                 player: player_opt.take().unwrap(),
                 game: game_opt.take().unwrap(),
+                state: state.clone(),
             },
             &req,
             stream,
@@ -67,6 +68,7 @@ pub struct Ws {
     uuid: String,
     player: state::Player,
     game: Addr<decrypto::Decrypto>,
+    state: web::Data<state::AppState>,
 }
 
 impl Actor for Ws {
@@ -86,11 +88,16 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
 
     fn finished(&mut self, _ctx: &mut Self::Context) {
         info!("player disconnected: {}", &self.player.name);
-        self.player.addr.take();
         let ret = self.game.send(decrypto::PlayerDisconnected {
             uuid: self.uuid.clone(),
         });
-        info!("player_disconnected: {:?}", ret.wait().unwrap());
+        let response = ret.wait().unwrap();
+        info!("player_disconnected: {:?}", &response);
+        if let Ok(delete_game) = response {
+            info!("Deleting game: {}", &self.player.game);
+            let mut games = self.state.games.lock().unwrap();
+            games.remove(&self.player.game);
+        }
     }
 
     fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
