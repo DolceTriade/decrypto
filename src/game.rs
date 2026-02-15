@@ -2,13 +2,14 @@ use crate::decrypto;
 use crate::state;
 use crate::utils;
 
-use actix::prelude::*;
 use actix::AsyncContext;
+use actix::prelude::*;
 use actix_session::Session;
-use actix_web::{error, web, Error, HttpRequest, HttpResponse};
+use actix_web::{Error, HttpRequest, HttpResponse, error, web};
 use actix_web_actors::ws;
+use futures::executor::block_on;
 
-pub fn game_ws(
+pub async fn game_ws(
     game: web::Path<String>,
     session: Session,
     req: HttpRequest,
@@ -16,12 +17,12 @@ pub fn game_ws(
     state: web::Data<state::AppState>,
 ) -> Result<HttpResponse, Error> {
     info!("Starting game ws...");
-    if let Ok(Some(uuid)) = &session.get::<String>("uuid") {
+    if let Some(uuid) = session.get::<String>("uuid")? {
         info!("Found UUID: {}...", &uuid);
         let mut player_opt: Option<state::Player> = None;
         {
             let players = state.players.lock().unwrap();
-            if let Some(player) = players.get(uuid) {
+            if let Some(player) = players.get(&uuid) {
                 info!("Found player: {}", &player.name);
                 player_opt.replace(player.clone());
             } else {
@@ -41,7 +42,7 @@ pub fn game_ws(
             if let Some(game_addr) = games.get(&*game.to_lowercase()) {
                 info!("Found game!");
                 let _res = game_addr.do_send(decrypto::AddPlayerToGame {
-                    uuid: uuid.to_string(),
+                    uuid: uuid.clone(),
                     player: state::Player::new(&player_opt.as_ref().unwrap().name, &*game),
                 });
                 game_opt.replace(game_addr.clone());
@@ -52,7 +53,7 @@ pub fn game_ws(
 
         return ws::start(
             Ws {
-                uuid: uuid.to_string(),
+                uuid: uuid.clone(),
                 player: player_opt.take().unwrap(),
                 game: game_opt.take().unwrap(),
                 state: state.clone(),
@@ -75,15 +76,15 @@ impl Actor for Ws {
     type Context = ws::WebsocketContext<Self>;
 }
 
-impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
+impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for Ws {
     fn started(&mut self, ctx: &mut Self::Context) {
         info!("player connected: {}", &self.player.name);
         self.player.addr.replace(ctx.address().clone());
-        let ret = self.game.send(decrypto::PlayerConnected {
+        let ret = block_on(self.game.send(decrypto::PlayerConnected {
             uuid: self.uuid.clone(),
             addr: ctx.address().clone(),
-        });
-        info!("player_connected: {:?}", ret.wait().unwrap());
+        }));
+        info!("player_connected: {:?}", ret);
     }
 
     fn finished(&mut self, _ctx: &mut Self::Context) {
@@ -91,9 +92,9 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
         let ret = self.game.send(decrypto::PlayerDisconnected {
             uuid: self.uuid.clone(),
         });
-        let response = ret.wait().unwrap();
+        let response = block_on(ret);
         info!("player_disconnected: {:?}", &response);
-        if let Ok(delete_game) = response {
+        if let Ok(Ok(delete_game)) = response {
             if delete_game {
                 info!("Deleting game: {}", &self.player.game);
                 let mut games = self.state.games.lock().unwrap();
@@ -102,15 +103,16 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
         }
     }
 
-    fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
+    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
         info!("GOT: {:?}", &msg);
         match msg {
-            ws::Message::Ping(msg) => ctx.pong(&msg),
-            ws::Message::Text(text) => match self.handle_text(&text, ctx) {
+            Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
+            Ok(ws::Message::Text(text)) => match self.handle_text(text.as_ref(), ctx) {
                 Ok(out) => ctx.text(out),
                 Err(err) => ctx.text(utils::send_error(&err)),
             },
-            ws::Message::Binary(bin) => ctx.binary(bin),
+            Ok(ws::Message::Binary(bin)) => ctx.binary(bin),
+            Err(_) => ctx.stop(),
             _ => (),
         }
     }
@@ -134,36 +136,28 @@ impl Ws {
         }
         match cmd.as_str().unwrap() {
             "join_a" => {
-                self.game
-                    .send(decrypto::AddPlayerToTeamA {
-                        player: self.player.name.clone(),
-                    })
-                    .wait()
-                    .map_err(|e| format!("{:?}", e))??;
+                block_on(self.game.send(decrypto::AddPlayerToTeamA {
+                    player: self.player.name.clone(),
+                }))
+                .map_err(|e| format!("{:?}", e))??;
             }
             "join_b" => {
-                self.game
-                    .send(decrypto::AddPlayerToTeamB {
-                        player: self.player.name.clone(),
-                    })
-                    .wait()
-                    .map_err(|e| format!("{:?}", e))??;
+                block_on(self.game.send(decrypto::AddPlayerToTeamB {
+                    player: self.player.name.clone(),
+                }))
+                .map_err(|e| format!("{:?}", e))??;
             }
             "leave_team" => {
-                self.game
-                    .send(decrypto::LeaveTeam {
-                        player: self.player.name.clone(),
-                    })
-                    .wait()
-                    .map_err(|e| format!("{:?}", e))??;
+                block_on(self.game.send(decrypto::LeaveTeam {
+                    player: self.player.name.clone(),
+                }))
+                .map_err(|e| format!("{:?}", e))??;
             }
             "start_game" => {
-                self.game
-                    .send(decrypto::StartGame {
-                        uuid: self.uuid.clone(),
-                    })
-                    .wait()
-                    .map_err(|e| format!("{:?}", e))??;
+                block_on(self.game.send(decrypto::StartGame {
+                    uuid: self.uuid.clone(),
+                }))
+                .map_err(|e| format!("{:?}", e))??;
             }
             "clues" => {
                 let clues_json = &value["clues"];
@@ -181,14 +175,12 @@ impl Ws {
                 for i in 0..3 {
                     clues[i] = utils::json_string(&clues_json[i])?;
                 }
-                self.game
-                    .send(decrypto::GiveClues {
-                        name: self.player.name.clone(),
-                        clues: clues,
-                        round: round.as_u64().unwrap() as usize,
-                    })
-                    .wait()
-                    .map_err(|e| format!("{:?}", e))??;
+                block_on(self.game.send(decrypto::GiveClues {
+                    name: self.player.name.clone(),
+                    clues: clues,
+                    round: round.as_u64().unwrap() as usize,
+                }))
+                .map_err(|e| format!("{:?}", e))??;
             }
             "guesses" => {
                 let guess_json = &value["guesses"];
@@ -209,14 +201,12 @@ impl Ws {
                     }
                     guesses[i] = guess_json[i].as_u64().unwrap() as u8;
                 }
-                self.game
-                    .send(decrypto::GuessClues {
-                        name: self.player.name.clone(),
-                        guesses: guesses,
-                        round: round.as_u64().unwrap() as usize,
-                    })
-                    .wait()
-                    .map_err(|e| format!("{:?}", e))??;
+                block_on(self.game.send(decrypto::GuessClues {
+                    name: self.player.name.clone(),
+                    guesses: guesses,
+                    round: round.as_u64().unwrap() as usize,
+                }))
+                .map_err(|e| format!("{:?}", e))??;
             }
             "spy_guesses" => {
                 let guess_json = &value["spy_guesses"];
@@ -237,40 +227,34 @@ impl Ws {
                     }
                     guesses[i] = guess_json[i].as_u64().unwrap() as u8;
                 }
-                self.game
-                    .send(decrypto::SpyGuessClues {
-                        name: self.player.name.clone(),
-                        guesses: guesses,
-                        round: round.as_u64().unwrap() as usize,
-                    })
-                    .wait()
-                    .map_err(|e| format!("{:?}", e))??;
+                block_on(self.game.send(decrypto::SpyGuessClues {
+                    name: self.player.name.clone(),
+                    guesses: guesses,
+                    round: round.as_u64().unwrap() as usize,
+                }))
+                .map_err(|e| format!("{:?}", e))??;
             }
             "team_chat" => {
                 let chat_json = &value["message"];
                 if !chat_json.is_string() {
                     return Err("team_chat must be a string.".to_string());
                 }
-                self.game
-                    .send(decrypto::TeamChat {
-                        name: self.player.name.clone(),
-                        msg: chat_json.as_str().unwrap().to_string(),
-                    })
-                    .wait()
-                    .map_err(|e| format!("{:?}", e))??;
+                block_on(self.game.send(decrypto::TeamChat {
+                    name: self.player.name.clone(),
+                    msg: chat_json.as_str().unwrap().to_string(),
+                }))
+                .map_err(|e| format!("{:?}", e))??;
             }
             "all_chat" => {
                 let chat_json = &value["message"];
                 if !chat_json.is_string() {
                     return Err("all_chat must be a string.".to_string());
                 }
-                self.game
-                    .send(decrypto::AllChat {
-                        name: self.player.name.clone(),
-                        msg: chat_json.as_str().unwrap().to_string(),
-                    })
-                    .wait()
-                    .map_err(|e| format!("{:?}", e))??;
+                block_on(self.game.send(decrypto::AllChat {
+                    name: self.player.name.clone(),
+                    msg: chat_json.as_str().unwrap().to_string(),
+                }))
+                .map_err(|e| format!("{:?}", e))??;
             }
             _ => {}
         }
@@ -279,6 +263,7 @@ impl Ws {
 }
 
 #[derive(Clone, Message)]
+#[rtype(result = "()")]
 pub struct SendCommand {
     pub json: String,
 }
@@ -292,6 +277,7 @@ impl Handler<SendCommand> for Ws {
 }
 
 #[derive(Clone, Message)]
+#[rtype(result = "()")]
 pub struct ForceDisconnect {}
 
 impl Handler<ForceDisconnect> for Ws {

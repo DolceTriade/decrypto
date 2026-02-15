@@ -5,21 +5,21 @@ use crate::utils;
 use actix::prelude::*;
 
 use actix_session::Session;
-use actix_web::{error, web, Error, HttpRequest, HttpResponse};
+use actix_web::{Error, HttpRequest, HttpResponse, error, web};
 use actix_web_actors::ws;
 
-pub fn lobby_ws(
+pub async fn lobby_ws(
     session: Session,
     req: HttpRequest,
     stream: web::Payload,
     state: web::Data<state::AppState>,
 ) -> Result<HttpResponse, Error> {
-    if let Ok(Some(uuid)) = &session.get::<String>("uuid") {
+    if let Some(uuid) = session.get::<String>("uuid")? {
         return ws::start(
             Ws {
                 req: req.clone(),
                 state: state,
-                uuid: uuid.to_string(),
+                uuid,
             },
             &req,
             stream,
@@ -40,16 +40,17 @@ impl Actor for Ws {
     type Context = ws::WebsocketContext<Self>;
 }
 
-impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
-    fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
+impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for Ws {
+    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
         info!("GOT: {:?}", &msg);
         match msg {
-            ws::Message::Ping(msg) => ctx.pong(&msg),
-            ws::Message::Text(text) => match self.handle_text(&text, ctx) {
+            Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
+            Ok(ws::Message::Text(text)) => match self.handle_text(text.as_ref(), ctx) {
                 Ok(out) => ctx.text(out),
                 Err(err) => ctx.text(utils::send_error(&err)),
             },
-            ws::Message::Binary(bin) => ctx.binary(bin),
+            Ok(ws::Message::Binary(bin)) => ctx.binary(bin),
+            Err(_) => ctx.stop(),
             _ => (),
         }
     }
@@ -99,12 +100,7 @@ impl Ws {
                     );
                 }
                 let words = self.state.wordlist.clone();
-                let game_addr = self
-                    .state
-                    .arbiter
-                    .exec(move || decrypto::Decrypto::new(&words).start())
-                    .wait()
-                    .unwrap();
+                let game_addr = decrypto::Decrypto::new(&words).start();
                 games.insert(room.to_lowercase(), game_addr.clone());
                 game_addr.do_send(decrypto::AddPlayerToGame {
                     uuid: self.uuid.clone(),

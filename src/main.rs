@@ -12,12 +12,14 @@ extern crate uuid;
 extern crate log;
 
 use actix::prelude::*;
-use actix_session::{CookieSession, Session};
-use actix_web::{web, App, Error, HttpResponse, HttpServer};
+use actix_session::{Session, SessionMiddleware, storage::CookieSessionStore};
+use actix_web::cookie::Key;
+use actix_web::{App, Error, HttpServer, web};
 use std::collections::HashMap;
+use std::env;
 use std::fs::read_to_string;
 use std::sync::{Arc, Mutex};
-use uuid::prelude::*;
+use uuid::Uuid;
 
 mod decrypto;
 mod game;
@@ -25,22 +27,54 @@ mod lobby;
 mod state;
 mod utils;
 
-pub fn default(
+pub async fn default(
     session: Session,
     _state: web::Data<state::AppState>,
 ) -> Result<actix_files::NamedFile, Error> {
-    if let Ok(Some(_uuid)) = &session.get::<String>("uuid") {
-    } else {
+    if session.get::<String>("uuid")?.is_none() {
         let uuid = Uuid::new_v4();
         info!("Setting UUID = {:?}", &uuid);
-        session.set("uuid", uuid.to_simple().to_string())?;
+        session.insert("uuid", uuid.simple().to_string())?;
     }
-    return Ok(actix_files::NamedFile::open("./static/index.html").unwrap());
+    actix_files::NamedFile::open("./static/index.html")
+        .map_err(actix_web::error::ErrorInternalServerError)
 }
 
-fn main() {
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
     simple_logging::log_to_stderr(log::LevelFilter::Info);
-    let wordlist: Vec<String> = read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/words.txt"))
+
+    let mut wordlist_path = format!("{}/words.txt", env!("CARGO_MANIFEST_DIR"));
+    let mut bind_addr = String::from("127.0.0.1:8080");
+
+    let mut args = env::args().skip(1);
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "-w" | "--wordlist" => {
+                wordlist_path = args
+                    .next()
+                    .expect("Missing value for --wordlist/-w argument");
+            }
+            "-b" | "--bind" => {
+                bind_addr = args.next().expect("Missing value for --bind/-b argument");
+            }
+            "-h" | "--help" => {
+                println!("Usage: decrypto [--wordlist <path>] [--bind <addr:port>]");
+                println!("Defaults:");
+                println!("  --wordlist {}/words.txt", env!("CARGO_MANIFEST_DIR"));
+                println!("  --bind 127.0.0.1:8080");
+                return Ok(());
+            }
+            _ => {
+                panic!(
+                    "Unknown argument: {}. Use --help for usage information.",
+                    arg
+                );
+            }
+        }
+    }
+
+    let wordlist: Vec<String> = read_to_string(&wordlist_path)
         .unwrap()
         .lines()
         .map(|s| s.to_string())
@@ -54,13 +88,15 @@ fn main() {
             wordlist: wordlist.clone(),
             games: games.clone(),
             players: players.clone(),
-            arbiter: Arbiter::new(),
         };
         App::new()
-            .data(state)
+            .app_data(web::Data::new(state))
             // cookie session middleware
             // TODO: Use real key.
-            .wrap(CookieSession::signed(&[0; 32]).secure(false))
+            .wrap(SessionMiddleware::new(
+                CookieSessionStore::default(),
+                Key::from(&[0; 64]),
+            ))
             .service(actix_files::Files::new("/static", "./static/").show_files_listing())
             .service(web::resource("/lobby_ws").route(web::get().to(lobby::lobby_ws)))
             .service(
@@ -71,8 +107,8 @@ fn main() {
             .service(web::resource("/game/{name}/ws").route(web::get().to(game::game_ws)))
             .default_service(web::route().to(default))
     })
-    .bind("127.0.0.1:8080")
-    .expect("Could not bind to port 8080")
+    .bind(&bind_addr)
+    .unwrap_or_else(|_| panic!("Could not bind to {}", bind_addr))
     .run()
-    .unwrap();
+    .await
 }

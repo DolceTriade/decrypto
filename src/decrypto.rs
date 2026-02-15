@@ -14,7 +14,6 @@ use std::collections::HashSet;
 enum State {
     Setup,
     Rounds,
-    GuessWords,
     Winner(String),
     Tie,
 }
@@ -51,6 +50,7 @@ impl Actor for Decrypto {
 }
 
 #[derive(Message)]
+#[rtype(result = "()")]
 pub struct AddPlayerToGame {
     pub uuid: String,
     pub player: state::Player,
@@ -718,7 +718,7 @@ fn pick_words(wordlist: &[String]) -> Vec<String> {
     let mut rand = rand::thread_rng();
     let mut picks: HashSet<usize> = HashSet::new();
     while picks.len() != 8 {
-        let index: usize = rand.gen::<usize>() % wordlist.len();
+        let index: usize = rand.r#gen::<usize>() % wordlist.len();
         picks.insert(index);
     }
     return picks.iter().map(|x| wordlist[*x].to_owned()).collect();
@@ -756,7 +756,7 @@ fn generate_order() -> Result<[u8; 3], String> {
     let mut rand = rand::thread_rng();
     let mut picks: HashSet<u8> = HashSet::new();
     while picks.len() != 3 {
-        let index: u8 = rand.gen::<u8>() % 4;
+        let index: u8 = rand.r#gen::<u8>() % 4;
         picks.insert(index + 1);
     }
     let mut array: [u8; 3] = [0; 3];

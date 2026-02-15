@@ -39,5 +39,4 @@ pub struct AppState {
     pub wordlist: Vec<String>,
     pub games: Arc<Mutex<HashMap<String, Addr<decrypto::Decrypto>>>>,
     pub players: Arc<Mutex<HashMap<String, Player>>>,
-    pub arbiter: Arbiter,
 }
